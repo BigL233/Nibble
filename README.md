@@ -1,4 +1,5 @@
 # Nibble
+<<<<<<< HEAD
 
 Nibble 是一个面向网络小说的本地桌面工具，集成小说抓取、TXT 转 EPUB、大模型翻译、术语表管理和翻译进度控制。项目目前以 Windows 桌面使用为主，界面默认中文，也可以在设置中切换为英文。
 
@@ -266,3 +267,6 @@ dist\Nibble\Nibble.exe
 ## License
 
 本项目沿用原项目许可证，详见 [LICENSE](LICENSE)。
+=======
+某神秘小说网站的爬取和翻译集合程序
+>>>>>>> e8d6b3fe8c32cc63d204e8b24d7890e1265ae96c
