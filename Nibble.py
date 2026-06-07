@@ -2304,6 +2304,9 @@ def load_glossary_file(path):
 
 
 def save_glossary_file(path, entries):
+    folder = os.path.dirname(os.path.abspath(path))
+    if folder:
+        os.makedirs(folder, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
 
@@ -2444,6 +2447,15 @@ def call_llm_translate(text, glossary_entries, api_base, api_key, model, style_g
     return data["choices"][0]["message"]["content"].strip()
 
 
+def translation_api_args(api_config):
+    return {
+        "api_base": api_config.get("api_base", ""),
+        "api_key": api_config.get("api_key", ""),
+        "model": api_config.get("model", ""),
+        "style_guide": api_config.get("style_guide", ""),
+    }
+
+
 def chat_completion_url_from_base(api_base):
     api_base = (api_base or "").strip().rstrip("/")
     if api_base.endswith("/chat/completions"):
@@ -2530,12 +2542,13 @@ def sanitize_translation_source_text(text):
 def translate_long_text_with_llm_progress(text, glossary_entries, api_config, pause_event=None, stop_event=None):
     translated = []
     chunks = split_translation_chunks(sanitize_translation_source_text(text))
+    translate_args = translation_api_args(api_config)
     for idx, chunk in enumerate(chunks, 1):
         if should_stop(stop_event):
             break
         wait_if_paused(pause_event)
         print(gui_text("log_translate_chunk").format(current=idx, total=len(chunks)))
-        translated.append(call_llm_translate(chunk, glossary_entries, **api_config))
+        translated.append(call_llm_translate(chunk, glossary_entries, **translate_args))
     return "\n\n".join(translated)
 
 
@@ -2707,6 +2720,7 @@ class NibbleGUI:
         self.status_var = tk.StringVar(value=gui_text("ready"))
         self.progress_var = tk.StringVar(value=gui_text("progress_idle"))
         self.url_var = tk.StringVar(value="https://sbxh4.com/novel/26305")
+        self.active_glossary_search_var = tk.StringVar()
         self.labels = {}
         self.buttons = {}
         self.pause_event = threading.Event()
@@ -2714,6 +2728,7 @@ class NibbleGUI:
         self.translation_running = False
         self.active_manual_entries = None
         self.active_machine_entries = None
+        self.active_manual_glossary_path = None
         self.active_machine_glossary_path = None
         self.active_refresh_terms = None
 
@@ -2864,7 +2879,12 @@ class NibbleGUI:
         self.active_glossary_frame = ttk.LabelFrame(root, text=gui_text("current_glossary"), padding=(12, 6, 12, 8))
         self.active_glossary_frame.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 8))
         self.active_glossary_frame.columnconfigure(0, weight=1)
-        self.active_glossary_frame.rowconfigure(0, weight=1)
+        self.active_glossary_frame.rowconfigure(1, weight=1)
+        active_toolbar = ttk.Frame(self.active_glossary_frame)
+        active_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        self.active_glossary_search_label = ttk.Label(active_toolbar, text=gui_text("search_glossary"))
+        self.active_glossary_search_label.pack(side="left", padx=(0, 6))
+        ttk.Entry(active_toolbar, textvariable=self.active_glossary_search_var, width=28).pack(side="left")
         self.active_glossary_tree = ttk.Treeview(
             self.active_glossary_frame,
             columns=("type", "src", "dst", "info", "active"),
@@ -2882,9 +2902,10 @@ class NibbleGUI:
             self.active_glossary_tree.column(col, width=width, anchor="w")
         active_scroll = ttk.Scrollbar(self.active_glossary_frame, orient="vertical", command=self.active_glossary_tree.yview)
         self.active_glossary_tree.configure(yscrollcommand=active_scroll.set)
-        self.active_glossary_tree.grid(row=0, column=0, sticky="nsew")
-        active_scroll.grid(row=0, column=1, sticky="ns")
+        self.active_glossary_tree.grid(row=1, column=0, sticky="nsew")
+        active_scroll.grid(row=1, column=1, sticky="ns")
         self.active_glossary_tree.bind("<Double-1>", self.edit_active_glossary_selected)
+        self.active_glossary_search_var.trace_add("write", lambda *_: self.refresh_active_glossary_tree())
         self.active_glossary_frame.grid_remove()
 
         progress_frame = ttk.Frame(root, padding=(12, 0, 12, 8))
@@ -2911,6 +2932,7 @@ class NibbleGUI:
         for key, button in self.buttons.items():
             button.configure(text=gui_text(key))
         self.active_glossary_frame.configure(text=gui_text("current_glossary"))
+        self.active_glossary_search_label.configure(text=gui_text("search_glossary"))
         for col, key in [
             ("type", "term_type"),
             ("src", "term_src"),
@@ -2944,6 +2966,14 @@ class NibbleGUI:
             base, _ = os.path.splitext(output_path)
             return base + "_machine_glossary.json"
         return os.path.join(output_path, "_machine_glossary.json")
+
+    def manual_glossary_path_for(self, source_type, output_path):
+        if not output_path:
+            return ""
+        if source_type == "EPUB":
+            base, _ = os.path.splitext(output_path)
+            return base + "_manual_glossary.json"
+        return os.path.join(output_path, "_manual_glossary.json")
 
     def append_log(self, text):
         self.log_text.configure(state="normal")
@@ -3012,13 +3042,23 @@ class NibbleGUI:
         tree.delete(*tree.get_children())
         manual_entries = self.active_manual_entries or []
         machine_entries = self.active_machine_entries or []
+        query = self.active_glossary_search_var.get().strip().lower()
         for prefix, label_key, entries in [
             ("manual", "term_type_manual", manual_entries),
             ("machine", "term_type_machine", machine_entries),
         ]:
+            type_label = gui_text(label_key)
             for idx, item in enumerate(entries):
+                haystack = " ".join([
+                    type_label,
+                    str(item.get("src", "")),
+                    str(item.get("dst", "")),
+                    str(item.get("info", "")),
+                ]).lower()
+                if query and query not in haystack:
+                    continue
                 tree.insert("", "end", iid=f"{prefix}:{idx}", values=(
-                    gui_text(label_key),
+                    type_label,
                     item.get("src", ""),
                     item.get("dst", ""),
                     item.get("info", ""),
@@ -3130,6 +3170,7 @@ class NibbleGUI:
                 index,
                 parent=self.root,
                 refresh_callback=self.refresh_active_glossary_tree,
+                save_path=self.active_manual_glossary_path,
             )
 
     def update_translation_progress(self, current, total, name, start_time, completed):
@@ -3507,6 +3548,10 @@ class NibbleGUI:
                 target = machine_entries if glossary_view.get() == gui_text("machine_glossary") else manual_entries
                 target.clear()
                 target.extend(load_glossary_file(path))
+                if target is manual_entries:
+                    self.active_manual_glossary_path = path
+                else:
+                    self.active_machine_glossary_path = self.machine_glossary_path_for(source_type.get(), output_path.get().strip())
                 refresh_terms()
                 self.refresh_active_glossary_tree()
                 print(f"Imported glossary: {path} ({len(target)} terms)\n")
@@ -3583,7 +3628,7 @@ class NibbleGUI:
 
         def edit_term(index=None):
             data = machine_entries if glossary_view.get() == gui_text("machine_glossary") else manual_entries
-            save_path = self.active_machine_glossary_path if data is machine_entries else None
+            save_path = self.active_machine_glossary_path if data is machine_entries else self.active_manual_glossary_path
             self.edit_glossary_term_dialog(data, index, parent=win, refresh_callback=refresh_terms, save_path=save_path)
 
         def edit_selected():
@@ -3599,9 +3644,10 @@ class NibbleGUI:
                     data.pop(idx)
             refresh_terms()
             self.refresh_active_glossary_tree()
-            if data is machine_entries and self.active_machine_glossary_path:
+            save_path = self.active_machine_glossary_path if data is machine_entries else self.active_manual_glossary_path
+            if save_path:
                 try:
-                    save_glossary_file(self.active_machine_glossary_path, data)
+                    save_glossary_file(save_path, data)
                 except Exception as e:
                     print(gui_text("log_machine_glossary_failed").format(error=e))
 
@@ -3654,10 +3700,17 @@ class NibbleGUI:
             out = output_path.get().strip()
             manual_snapshot = manual_entries
             machine_snapshot = machine_entries
+            manual_path = self.active_manual_glossary_path or self.manual_glossary_path_for(source_type.get(), out)
             machine_path = self.machine_glossary_path_for(source_type.get(), out)
             self.active_manual_entries = manual_entries
             self.active_machine_entries = machine_entries
+            self.active_manual_glossary_path = manual_path
             self.active_machine_glossary_path = machine_path
+            if manual_path:
+                try:
+                    save_glossary_file(manual_path, manual_entries)
+                except Exception as e:
+                    print(gui_text("log_machine_glossary_failed").format(error=e))
             if os.path.exists(machine_path):
                 try:
                     existing_machine_terms = load_glossary_file(machine_path)
@@ -3702,6 +3755,16 @@ class NibbleGUI:
                     machine_glossary_path=machine_path,
                     glossary_callback=glossary_callback,
                 ))
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            try:
+                win.transient("")
+                win.iconify()
+            except Exception:
+                win.withdraw()
+            self.root.lift()
 
         ttk.Button(bottom, text=gui_text("start_translate"), command=start_translation).pack(side="right")
         self.center_window(win, 1180, 700)
