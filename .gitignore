@@ -1,0 +1,38 @@
+# Local settings and secrets
+config.json
+*.local.json
+*.env
+.env
+
+# Build output
+build/
+dist/
+*.exe
+*.zip
+
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Browser drivers and downloaded binaries
+chromedriver.exe
+chromedriver
+chromedriver-*.zip
+
+# Generated novel / translation output
+*_translated/
+*_machine_glossary.json
+术语表_*.json
+그런 악질 방송 안ㅣ에요/
+그런 악질 방송 안ㅣ에요_translated/
+
+# Editor and OS files
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
