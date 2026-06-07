@@ -1,0 +1,800 @@
+[
+  {
+    "src": "클리셰",
+    "dst": "俗套",
+    "info": "概念",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "TS",
+    "dst": "变身性转",
+    "info": "术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "나이트 오브 나이츠",
+    "dst": "骑士之夜",
+    "info": "游戏名",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "나오나",
+    "dst": "骑夜",
+    "info": "游戏简称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "도적",
+    "dst": "暗影刺客",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "성기사",
+    "dst": "圣骑士",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "사제",
+    "dst": "祭司",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "마법사",
+    "dst": "法师",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "광전사",
+    "dst": "狂战士",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "궁수",
+    "dst": "射手",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "입털면던짐",
+    "dst": "嘴炮圣骑",
+    "info": "玩家ID",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "솜사탕",
+    "dst": "棉花糖",
+    "info": "玩家ID",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "아따먹",
+    "dst": "挨打王",
+    "info": "玩家ID",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "아먹따",
+    "dst": "挨揍王",
+    "info": "玩家ID",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "아크",
+    "dst": "亚克",
+    "info": "玩家ID",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "저격",
+    "dst": "狙击",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "부계정",
+    "dst": "小号",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "패드립",
+    "dst": "人身攻击",
+    "info": "网络用语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "오픈",
+    "dst": "放推",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "노마크",
+    "dst": "如入无人之境",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "큐",
+    "dst": "匹配",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "항복 투표",
+    "dst": "投降投票",
+    "info": "游戏功能",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "챌린저",
+    "dst": "顶尖段位",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "첨탑",
+    "dst": "魔法塔",
+    "info": "建筑",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "본진",
+    "dst": "基地",
+    "info": "建筑",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "성채",
+    "dst": "要塞",
+    "info": "建筑",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "대저방부",
+    "dst": "至高典籍",
+    "info": "网络梗/术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "방종",
+    "dst": "停播",
+    "info": "直播术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "스트리머",
+    "dst": "主播",
+    "info": "行业术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "마왕",
+    "dst": "魔王",
+    "info": "角色类型",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "프로게이머",
+    "dst": "职业选手",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "뇌지컬",
+    "dst": "脑力操作",
+    "info": "游戏风格",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "반응속도",
+    "dst": "反应速度",
+    "info": "能力值",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "천장",
+    "dst": "天花板",
+    "info": "比喻瓶颈",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "각성",
+    "dst": "觉醒",
+    "info": "状态",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "다이아몬드 랭크",
+    "dst": "钻石段位",
+    "info": "段位",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "마스터",
+    "dst": "大师",
+    "info": "段位",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "승급전",
+    "dst": "排位晋级赛",
+    "info": "游戏系统",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "통곡의 벽",
+    "dst": "痛哭之墙",
+    "info": "大师晋级难度别称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "그치리",
+    "dst": "古赤里",
+    "info": "玩家名(祭司)",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "르옹",
+    "dst": "卢勇",
+    "info": "玩家名(圣骑士)",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "따먹아",
+    "dst": "挨打王",
+    "info": "昵称(暗影刺客)",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "법사",
+    "dst": "咒术师",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "앞돌진",
+    "dst": "前突进",
+    "info": "技能名",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "VR 모션트래킹",
+    "dst": "VR动作捕捉",
+    "info": "技术",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "모션 보정",
+    "dst": "动作辅助修正",
+    "info": "功能",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "도네이션",
+    "dst": "打赏",
+    "info": "直播术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "시청자참여",
+    "dst": "观众参与",
+    "info": "直播内容",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "실력방송",
+    "dst": "实力直播",
+    "info": "直播概念",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "피지컬",
+    "dst": "身体操作",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "트롤",
+    "dst": "演员",
+    "info": "恶意玩家",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "프로 경기",
+    "dst": "职业比赛",
+    "info": "赛事",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "서버",
+    "dst": "服务器",
+    "info": "游戏服务器",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "방송인",
+    "dst": "主播",
+    "info": "行业术语：进行直播的人",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "지튜브",
+    "dst": "直管",
+    "info": "平台专有名词：类似YouTube的直播平台",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "지튜브 쇼츠",
+    "dst": "直管短视频",
+    "info": "平台专有名词：短视频板块",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "트위트",
+    "dst": "推特",
+    "info": "平台专有名词：社交媒体",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "디스코스",
+    "dst": "迪斯科司",
+    "info": "应用专有名词：聊天软件Discord",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "VR기기",
+    "dst": "VR设备",
+    "info": "术语：虚拟现实设备",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "방플",
+    "dst": "直播窥屏",
+    "info": "游戏作弊术语：看直播获取情报",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "저스트 채팅",
+    "dst": "纯闲聊",
+    "info": "直播模式：不开游戏只聊天",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "멘탈",
+    "dst": "心态",
+    "info": "俚语：精神、心理状态",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "떡상",
+    "dst": "暴涨",
+    "info": "俚语：人气/播放量大幅上升",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "헥사킬",
+    "dst": "六杀",
+    "info": "游戏术语：一次团灭对手六人",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "캐리",
+    "dst": "carry",
+    "info": "游戏术语：带领队伍获胜",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "통매음",
+    "dst": "通话录音罪",
+    "info": "法律术语：非法录音的罪名",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "고소",
+    "dst": "提告/起诉",
+    "info": "法律术语：提起诉讼",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "철퇴",
+    "dst": "铁锤/封禁",
+    "info": "隐喻术语：降下制裁或封号",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "핵",
+    "dst": "外挂",
+    "info": "游戏作弊术语：作弊程序",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "잼민이",
+    "dst": "小学生",
+    "info": "俚语：指低龄玩家",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "찐따",
+    "dst": "社恐死宅",
+    "info": "俚语：不善社交的人",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "또라이",
+    "dst": "疯子",
+    "info": "俚语：行为异常的人",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "악질 저격러",
+    "dst": "恶质狙击猎手",
+    "info": "称号",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "VR 장비",
+    "dst": "虚拟现实设备",
+    "info": "设备",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "따뜻한아메리카노먹고싶다",
+    "dst": "想喝热美式",
+    "info": "用户昵称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "중립국",
+    "dst": "中立国",
+    "info": "用户昵称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "4딸라",
+    "dst": "4块钱",
+    "info": "用户昵称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "데자뷰",
+    "dst": "既视感",
+    "info": "术语，既视感",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "리그 오브 레전드",
+    "dst": "英雄联盟",
+    "info": "游戏名称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "닷지",
+    "dst": "秒退",
+    "info": "游戏行为，退出比赛",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "한타",
+    "dst": "团战",
+    "info": "游戏术语，团队战斗",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "0.7인분",
+    "dst": "0.7人份",
+    "info": "游戏术语，贡献度",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "입갤",
+    "dst": "闪亮登场",
+    "info": "网络用语，登场",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "헌정 게임",
+    "dst": "致敬局",
+    "info": "粉丝致敬游戏",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "빡종",
+    "dst": "怒退",
+    "info": "网络用语，生气地结束",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "나오나 갤러리",
+    "dst": "拿拿欧论坛板块",
+    "info": "论坛",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "도혐",
+    "dst": "暗影刺客的黑粉",
+    "info": "网络用语，讨厌盗贼的人",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "랜덤픽",
+    "dst": "随机选人",
+    "info": "游戏随机选择",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "픽",
+    "dst": "选英雄",
+    "info": "选择英雄",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "참교육",
+    "dst": "铁拳教育",
+    "info": "网络用语，教训",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "나락",
+    "dst": "深渊",
+    "info": "网络用语，掉入深渊",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "테러리스트",
+    "dst": "恐怖分子",
+    "info": "指捣乱玩家",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "갓겜",
+    "dst": "神作",
+    "info": "游戏评价术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "망겜",
+    "dst": "粪作",
+    "info": "游戏评价术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "기사",
+    "dst": "骑士",
+    "info": "职业",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "CC기",
+    "dst": "控制技能",
+    "info": "游戏术语/技能",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "광역 마법",
+    "dst": "范围魔法",
+    "info": "技能",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "패링",
+    "dst": "招架",
+    "info": "战斗动作",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "치명타",
+    "dst": "致命一击",
+    "info": "战斗术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "패시브",
+    "dst": "被动",
+    "info": "技能类型",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "은신",
+    "dst": "隐身",
+    "info": "技能",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "지하공격로",
+    "dst": "地下攻击路",
+    "info": "地图/路线",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "보물상자",
+    "dst": "宝箱",
+    "info": "游戏物品",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "단검",
+    "dst": "匕首",
+    "info": "武器",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "신화템",
+    "dst": "神话装",
+    "info": "装备等级",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "유틸",
+    "dst": "通用系",
+    "info": "天赋分支",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "갱킹",
+    "dst": "游走抓人",
+    "info": "战术术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "밴",
+    "dst": "Ban位",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "티어",
+    "dst": "段位",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "브실골",
+    "dst": "铜银金",
+    "info": "段位缩写",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "레벨업",
+    "dst": "升级",
+    "info": "游戏术语",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "패러데이 게임스",
+    "dst": "Paradey Games",
+    "info": "游戏公司",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "따아먹",
+    "dst": "挨打王",
+    "info": "用户昵称",
+    "lock": 0,
+    "is_active": 1
+  },
+  {
+    "src": "도댓",
+    "dst": "道戴",
+    "info": "主播昵称",
+    "lock": 0,
+    "is_active": 1
+  }
+]

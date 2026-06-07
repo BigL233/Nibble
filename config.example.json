@@ -1,0 +1,15 @@
+{
+    "DRIVERPATH": "NONE",
+    "download_format": "txt",
+    "translate": false,
+    "theme": "purplepink",
+    "gui_language": "zh",
+    "llm_api_base": "https://api.openai.com/v1/chat/completions",
+    "llm_api_key": "",
+    "llm_model": "gpt-4o-mini",
+    "translation_style": "",
+    "glossary_extraction_guide": "",
+    "last_translate_source_type": "TXT Folder",
+    "last_translate_source_path": "",
+    "last_translate_output_path": ""
+}
