@@ -10,6 +10,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from urllib.parse import urlparse, urljoin
+
+for _stream in (getattr(sys, "stdout", None), getattr(sys, "stderr", None)):
+    try:
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     import fade
 except ImportError:
@@ -43,7 +51,7 @@ except ImportError:
 
 chrome_browser_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 chrome_driver_path = "NONE"
-VERSION = "2.5"
+VERSION = "2.7"
 
 
 def app_dir():
@@ -66,6 +74,11 @@ def resource_path(name):
 
 CONFIG_PATH = os.path.join(app_dir(), "config.json")
 
+DEFAULT_POLISH_GUIDE = (
+    "对比原文和粗译文，优化翻译，使它更加自然，可以适当填充主语、谓语、宾语等必要成分，"
+    "让文本更有逻辑性。"
+)
+
 # ── Default settings (overridden by config.json if present) ──────────────
 SETTINGS = {
     "download_format": "txt",       # "txt" or "epub"
@@ -76,10 +89,26 @@ SETTINGS = {
     "llm_api_key":     "",
     "llm_model":       "gpt-4o-mini",
     "translation_style": "",
+    "polish_style": DEFAULT_POLISH_GUIDE,
     "glossary_extraction_guide": "",
     "last_translate_source_type": "TXT Folder",
     "last_translate_source_path": "",
-    "last_translate_output_path": ""
+    "last_translate_output_path": "",
+    "last_translate_glossary_mode": "both",
+    "last_polish_source_path": "",
+    "last_polish_translation_path": "",
+    "last_polish_output_path": "",
+    "last_polish_glossary_path": "",
+    "last_polish_extra_glossary_paths": [],
+    "polish_glossary_split": False,
+    "polish_glossary_lines": 80,
+    "polish_symbol_split": False,
+    "polish_symbol_lines": 80,
+    "polish_text_split": True,
+    "polish_text_lines": 80,
+    "novelpia_profile_dir": "",
+    "novelpia_delay_min": 4.0,
+    "novelpia_delay_max": 7.0
 }
 
 # All valid fade colour methods (single-argument string → text)
@@ -217,6 +246,16 @@ def save_to_file(path, content):
     with open(path, 'w', encoding='utf-8') as f:
         f.write(content)
 
+def list_txt_files(folder_path):
+    try:
+        return [
+            os.path.join(folder_path, name)
+            for name in os.listdir(folder_path)
+            if name.lower().endswith(".txt") and os.path.isfile(os.path.join(folder_path, name))
+        ]
+    except FileNotFoundError:
+        return []
+
 def save_as_epub(folder_path, novel_title):
     from ebooklib import epub
 
@@ -247,7 +286,7 @@ def save_as_epub(folder_path, novel_title):
         parts = re.split(r'(\d+)', s.lower())
         return [int(p) if p.isdigit() else p for p in parts]
 
-    txt_files = glob.glob(os.path.join(folder_path, '*.txt'))
+    txt_files = list_txt_files(folder_path)
     if not txt_files:
         print(f"{Fore.RED}[{Fore.WHITE}X{Fore.RED}]{w} No .txt files found to convert.")
         return
@@ -1142,6 +1181,78 @@ def get_chrome_version():
     return version
 
 
+def find_chrome_executable():
+    os_type = platform.system().lower()
+    candidates = []
+    if os_type == "windows":
+        candidates.extend([
+            chrome_browser_path,
+            os.path.join(os.getenv("PROGRAMFILES", r"C:\Program Files"), "Google", "Chrome", "Application", "chrome.exe"),
+            os.path.join(os.getenv("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), "Google", "Chrome", "Application", "chrome.exe"),
+            os.path.join(os.getenv("LOCALAPPDATA", ""), "Google", "Chrome", "Application", "chrome.exe"),
+        ])
+    elif os_type == "darwin":
+        candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    else:
+        candidates.extend(["google-chrome", "google-chrome-stable", "chromium-browser", "chromium"])
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if os.path.isabs(candidate):
+            if os.path.exists(candidate):
+                return candidate
+            continue
+        try:
+            probe = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if probe.returncode == 0:
+                return candidate
+        except Exception:
+            continue
+    raise RuntimeError("Could not find Google Chrome. Please install Chrome or set chrome_browser_path in Nibble.py.")
+
+
+def find_chrome_user_data_dir():
+    os_type = platform.system().lower()
+    candidates = []
+    if os_type == "windows":
+        local_app_data = os.getenv("LOCALAPPDATA", "")
+        candidates.extend([
+            os.path.join(local_app_data, "Google", "Chrome", "User Data"),
+            os.path.join(local_app_data, "Google", "Chrome Beta", "User Data"),
+            os.path.join(local_app_data, "Google", "Chrome SxS", "User Data"),
+        ])
+    elif os_type == "darwin":
+        candidates.append(os.path.expanduser("~/Library/Application Support/Google/Chrome"))
+    else:
+        candidates.extend([
+            os.path.expanduser("~/.config/google-chrome"),
+            os.path.expanduser("~/.config/google-chrome-beta"),
+            os.path.expanduser("~/.config/chromium"),
+        ])
+
+    for candidate in candidates:
+        if candidate and os.path.isdir(candidate):
+            return os.path.abspath(candidate)
+
+    # Confirm that Chrome exists before returning its standard user-data path.
+    find_chrome_executable()
+    if candidates and candidates[0]:
+        return os.path.abspath(candidates[0])
+    raise RuntimeError("Could not locate the Google Chrome user data folder.")
+
+
+def auto_novelpia_profile_dir():
+    chrome_user_data = find_chrome_user_data_dir()
+    chrome_root = os.path.dirname(chrome_user_data)
+    return os.path.join(chrome_root, "Nibble", "novelpia_chrome_profile")
+
+
 def get_chrome_major_version():
     version = get_chrome_version()
     match = re.match(r"(\d+)", version)
@@ -1618,11 +1729,573 @@ def handle_webnoveltranslations(driver, novel_url=None):
         print(f"{Fore.RED}[{Fore.WHITE}!{Fore.RED}]{w} Error in WebnovelTranslations handler: {e}")
 
 
+def _novelpia_text(zh_text, en_text):
+    return zh_text if SETTINGS.get("gui_language", "zh") == "zh" else en_text
+
+
+def _novelpia_novel_id(novel_url):
+    match = re.search(r"/novel/(\d+)", urlparse(novel_url).path)
+    return match.group(1) if match else None
+
+
+def _novelpia_safe_name(value):
+    value = html.unescape(value or "")
+    value = re.sub(r'[\\/*?:"<>|]', "-", value)
+    value = re.sub(r"\s+", " ", value).strip(" .")
+    return value[:140] or "Untitled"
+
+
+def _novelpia_name_key(value):
+    return re.sub(r"[\W_]+", "", html.unescape(value or "").casefold())
+
+
+NOVELPIA_LOADING_MARKERS = (
+    "소설 내용을 불러오고 있습니다",
+    "소설 내용을 불러오고 있습니다.",
+)
+
+NOVELPIA_BASE64_NOISE_RE = re.compile(r"^[A-Za-z0-9+/_=-]{72,}$")
+
+
+def _novelpia_line_is_noise(line):
+    stripped = (line or "").strip()
+    if not stripped or len(stripped) < 72:
+        return False
+    if not NOVELPIA_BASE64_NOISE_RE.fullmatch(stripped):
+        return False
+    return bool(re.search(r"[A-Z]", stripped) and re.search(r"[a-z]", stripped) and re.search(r"\d", stripped))
+
+
+def _novelpia_clean_text(text):
+    lines = []
+    for line in (text or "").splitlines():
+        if _novelpia_line_is_noise(line):
+            continue
+        lines.append(line.rstrip())
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def _novelpia_text_has_noise(text):
+    return any(_novelpia_line_is_noise(line) for line in (text or "").splitlines())
+
+
+def _novelpia_content_is_placeholder(text):
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return True
+    if any(marker in cleaned for marker in NOVELPIA_LOADING_MARKERS):
+        without_markers = cleaned
+        for marker in NOVELPIA_LOADING_MARKERS:
+            without_markers = without_markers.replace(marker, "")
+        without_markers = re.sub(r"\[Illustration\]", "", without_markers, flags=re.IGNORECASE)
+        without_markers = re.sub(r"커버\s*접기", "", without_markers)
+        meaningful_lines = [
+            line.strip()
+            for line in without_markers.splitlines()
+            if len(line.strip()) >= 20
+        ]
+        return len(meaningful_lines) < 3 and len(without_markers.strip()) < 240
+    return False
+
+
+def _novelpia_saved_file_is_valid(path):
+    try:
+        if not path or not os.path.exists(path) or os.path.getsize(path) <= 100:
+            return False
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            sample = fh.read()
+        return not _novelpia_content_is_placeholder(sample) and not _novelpia_text_has_noise(sample)
+    except OSError:
+        return False
+
+
+def _novelpia_wait_for_episode_list(driver, timeout=45):
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script(
+            "return !!document.querySelector('#episode_list #episode_table "
+            "[id^=\"bookmark_\"]');"
+        )
+    )
+
+
+def _novelpia_collect_current_page(driver):
+    return driver.execute_script(
+        """
+        return Array.from(document.querySelectorAll('#episode_list #episode_table tr'))
+          .map((row) => {
+            const mark = row.querySelector('[id^="bookmark_"]');
+            if (!mark) return null;
+            const cell = mark.closest('td') || row;
+            const onclick = cell.getAttribute('onclick') || '';
+            const idMatch = (mark.id || '').match(/bookmark_(\\d+)/);
+            const urlMatch = onclick.match(/\\/viewer\\/(\\d+)/);
+            const chapterId = idMatch ? idMatch[1] : (urlMatch ? urlMatch[1] : '');
+            if (!chapterId) return null;
+            const titleNode = cell.querySelector('b');
+            const title = (titleNode ? titleNode.innerText : '').trim();
+            const rowText = (row.innerText || '').replace(/\\s+/g, ' ').trim();
+            const epMatch = rowText.match(/EP\\.\\s*(\\d+)/i);
+            return {
+              id: chapterId,
+              title: title,
+              ep: epMatch ? Number(epMatch[1]) : null,
+              kind: /BONUS/i.test(rowText) ? 'bonus' : 'episode'
+            };
+          }).filter(Boolean);
+        """
+    ) or []
+
+
+def _novelpia_collect_notices(driver):
+    return driver.execute_script(
+        """
+        return Array.from(document.querySelectorAll('.notice_table tr'))
+          .map((row) => {
+            const cell = Array.from(row.querySelectorAll('[onclick]')).find((el) =>
+              (el.getAttribute('onclick') || '').includes('/viewer/'));
+            if (!cell) return null;
+            const match = (cell.getAttribute('onclick') || '').match(/\\/viewer\\/(\\d+)/);
+            if (!match) return null;
+            const titleNode = cell.querySelector('b');
+            return {
+              id: match[1],
+              title: (titleNode ? titleNode.innerText : '').trim(),
+              ep: null,
+              kind: 'notice'
+            };
+          }).filter(Boolean);
+        """
+    ) or []
+
+
+def _novelpia_page_count(driver):
+    value = driver.execute_script(
+        """
+        const box = document.querySelector('.select_episode_box');
+        const text = box ? (box.textContent || '') : '';
+        const match = text.match(/\\/\\s*(\\d+)/);
+        if (match) return Number(match[1]);
+        const values = Array.from(document.querySelectorAll('.page-link'))
+          .map((el) => Number((el.innerText || '').trim()))
+          .filter(Number.isFinite);
+        return values.length ? Math.max(...values) : 1;
+        """
+    )
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _novelpia_go_to_list_page(driver, page_number, novel_id, previous_first_id=None):
+    clicked = driver.execute_script(
+        """
+        const input = document.querySelector('#select_episode_no');
+        const button = document.querySelector('.select_episode_box .btn-page-go');
+        if (!input || !button) return false;
+        input.value = arguments[0];
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+        button.click();
+        return true;
+        """,
+        page_number,
+    )
+    if not clicked:
+        raise RuntimeError("Novelpia page-jump controls were not found.")
+
+    target_index = str(page_number - 1)
+
+    def page_changed(d):
+        state = d.execute_script(
+            """
+            const mark = document.querySelector('#episode_list #episode_table [id^="bookmark_"]');
+            return {
+              page: localStorage.getItem(arguments[0]),
+              first: mark ? mark.id.replace('bookmark_', '') : ''
+            };
+            """,
+            f"novel_page_{novel_id}",
+        )
+        if not state or state.get("page") != target_index:
+            return False
+        return not previous_first_id or state.get("first") != previous_first_id
+
+    WebDriverWait(driver, 45).until(page_changed)
+
+
+def _novelpia_extract_rendered_text(driver):
+    return driver.execute_script(
+        """
+        const source = document.querySelector('#novel_text');
+        if (!source) return '';
+        let text = (source.innerText || source.textContent || '')
+          .replace(/\\u00a0/g, ' ')
+          .replace(/[ \\t]+\\n/g, '\\n')
+          .replace(/\\n{3,}/g, '\\n\\n')
+          .trim();
+        const imageCount = source.querySelectorAll('img').length;
+        if (imageCount) {
+          const markers = Array.from({length: imageCount}, () => '[Illustration]').join('\\n');
+          text = text ? `${text}\\n\\n${markers}` : markers;
+        }
+        return text;
+        """
+    ) or ""
+
+
+def _novelpia_normalize_viewer_text(text):
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _novelpia_navigate(driver, target_url):
+    try:
+        driver.get(target_url)
+    except TimeoutException:
+        # Keep the already rendered page instead of refreshing repeatedly.
+        driver.execute_script("window.stop();")
+
+
+def _novelpia_viewer_state(driver):
+    state = driver.execute_script(
+        """
+        const root = document.querySelector('#novel_text');
+        const rootText = root ? (root.innerText || root.textContent || '') : '';
+        const normalizedRootText = rootText
+          .replace(/\\u00a0/g, ' ')
+          .replace(/\\s+/g, ' ')
+          .trim();
+        const isLoading = normalizedRootText.includes('소설 내용을 불러오고 있습니다');
+        const bodyText = (document.body ? (document.body.innerText || document.body.textContent || '') : '')
+          .replace(/\\s+/g, ' ')
+          .trim();
+        const visible = !!root && Number.parseFloat(getComputedStyle(root).opacity || '1') > 0;
+        const imageCount = root ? root.querySelectorAll('img').length : 0;
+        const textWithoutLoading = normalizedRootText
+          .replace(/소설 내용을 불러오고 있습니다\\.?/g, '')
+          .replace(/커버\\s*접기/g, '')
+          .trim();
+        const hasContent = visible && !isLoading && (
+          textWithoutLoading.length >= 120 ||
+          (textWithoutLoading.length >= 60 && imageCount > 0)
+        );
+        return {
+          path: location.pathname || '',
+          rootText: normalizedRootText,
+          isLoading,
+          imageCount,
+          hasContent,
+          textTail: bodyText.slice(-1000)
+        };
+        """
+    ) or {}
+    text = str(state.get("textTail") or "")
+    lowered = text.lower()
+    login_markers = (
+        "로그인이 필요",
+        "로그인 후",
+        "로그인을 해주세요",
+        "로그인해주세요",
+        "로그인 하셔야",
+        "login",
+    )
+    access_markers = (
+        "회원",
+        "플러스",
+        "구매",
+        "보유하신 코인",
+        "열람권",
+        "본인인증",
+        "성인 인증",
+        "권한",
+        "이용하실 수 없습니다",
+    )
+    state["loginRequired"] = (
+        not state.get("hasContent")
+        and (
+            any(marker in text for marker in login_markers)
+            or any(marker in lowered for marker in ("sign in", "log in"))
+            or any(marker in text for marker in access_markers)
+        )
+    )
+    return state
+
+
+def _novelpia_load_chapter(driver, chapter, base_url):
+    _novelpia_navigate(driver, urljoin(base_url, f"/viewer/{chapter['id']}"))
+
+    def viewer_ready(d):
+        if not urlparse(d.current_url).path.startswith("/viewer/"):
+            return True
+        state = _novelpia_viewer_state(d)
+        return bool(state.get("hasContent") or state.get("loginRequired"))
+
+    try:
+        WebDriverWait(driver, 50).until(viewer_ready)
+    except TimeoutException as exc:
+        current_url = getattr(driver, "current_url", "")
+        try:
+            state = _novelpia_viewer_state(driver)
+            detail = state.get("textTail") or current_url
+        except Exception:
+            detail = current_url
+        raise TimeoutException(
+            _novelpia_text(
+                f"章节正文等待超时：{current_url}\n页面可见文本末尾：{detail}",
+                f"Timed out waiting for rendered chapter text: {current_url}\nVisible page tail: {detail}",
+            )
+        ) from exc
+    state = _novelpia_viewer_state(driver)
+    if state.get("loginRequired"):
+        raise PermissionError(_novelpia_text(
+            f"该章节需要登录、会员/订阅或认证权限：{driver.current_url}\n页面提示：{state.get('textTail', '')}",
+            f"This chapter requires login, membership/subscription, or verification access: {driver.current_url}\nPage says: {state.get('textTail', '')}",
+        ))
+    if not urlparse(driver.current_url).path.startswith("/viewer/"):
+        raise PermissionError(_novelpia_text(
+            "网页跳离了阅读器，可能需要登录、实名或订阅权限。",
+            "The page left the viewer; login, age verification, or subscription access may be required.",
+        ))
+
+    text = _novelpia_clean_text(_novelpia_extract_rendered_text(driver))
+    if not text or _novelpia_content_is_placeholder(text):
+        visible = (driver.find_element(By.TAG_NAME, "body").text or "").strip()
+        raise PermissionError(
+            _novelpia_text("没有读到正文，已停止以避免反复请求：", "No chapter text was rendered; stopping: ")
+            + (visible[-500:] if visible else driver.current_url)
+        )
+    return text
+
+
+def handle_novelpia(driver, novel_url):
+    """Download Novelpia through its rendered web UI, one visible page at a time."""
+    novel_id = _novelpia_novel_id(novel_url)
+    if not novel_id:
+        print(f"{r}[{w}X{r}]{w} " + _novelpia_text(
+            "网址应为 https://novelpia.com/novel/作品编号",
+            "Expected a URL like https://novelpia.com/novel/12345",
+        ))
+        return
+
+    parsed = urlparse(novel_url)
+    base_url = f"{parsed.scheme or 'https'}://{parsed.netloc or 'novelpia.com'}"
+    novel_url = f"{base_url}/novel/{novel_id}"
+    print(f"{T()}[{T2()}!{T()}]{w} " + _novelpia_text(
+        "正在用可见 Chrome 打开 Novelpia 作品页……",
+        "Opening the Novelpia novel in visible Chrome...",
+    ))
+    _novelpia_navigate(driver, novel_url)
+    WebDriverWait(driver, 45).until(
+        lambda d: d.execute_script("return document.readyState") in ("interactive", "complete")
+    )
+
+    if not driver.get_cookie("LOGINKEY"):
+        print(_novelpia_text(
+            "未检测到登录态。会员/订阅章节必须先在这个浏览器窗口里正常登录；验证码请手动完成。"
+            "只抓免费章节才可以未登录继续。",
+            "No saved login was detected. Log in normally in the browser for chapters your account can access; "
+            "solve any CAPTCHA manually. Continue as a guest only for free chapters.",
+        ))
+        input(_novelpia_text(
+            "登录完成后按回车继续（如果只抓免费章，也可直接回车）：",
+            "Press Enter after logging in (or press Enter directly for free chapters only): ",
+        ))
+        _novelpia_navigate(driver, novel_url)
+
+    _novelpia_wait_for_episode_list(driver)
+    title = driver.execute_script(
+        """
+        if (window.ENP_VAR && ENP_VAR.collect && ENP_VAR.collect.productName) {
+          return ENP_VAR.collect.productName;
+        }
+        const meta = document.querySelector('meta[property="og:title"]');
+        return meta ? meta.content : document.title;
+        """
+    ) or f"Novelpia_{novel_id}"
+    if title.startswith("노벨피아") and " - " in title:
+        title = title.rsplit(" - ", 1)[-1]
+    title = _novelpia_safe_name(title)
+
+    range_text = input(_novelpia_text(
+        "下载范围（如 1-50；留空为全部）：",
+        "Episode range (for example 1-50; blank means all): ",
+    )).strip()
+    start_ep, end_ep = 1, None
+    if range_text:
+        range_match = re.fullmatch(r"\s*(\d+)\s*(?:[-~～]\s*(\d+)\s*)?", range_text)
+        if not range_match:
+            raise ValueError(_novelpia_text("下载范围格式无效。", "Invalid episode range."))
+        start_ep = int(range_match.group(1))
+        end_ep = int(range_match.group(2) or range_match.group(1))
+        if end_ep < start_ep:
+            start_ep, end_ep = end_ep, start_ep
+
+    current_page = driver.execute_script(
+        "return localStorage.getItem(arguments[0]);", f"novel_page_{novel_id}"
+    )
+    if current_page not in (None, "0"):
+        current = _novelpia_collect_current_page(driver)
+        _novelpia_go_to_list_page(
+            driver, 1, novel_id, current[0]["id"] if current else None
+        )
+
+    current = _novelpia_collect_current_page(driver)
+    numbered = [item for item in current if item.get("ep") is not None]
+    if len(numbered) >= 2 and numbered[0]["ep"] > numbered[-1]["ep"]:
+        previous_id = current[0]["id"] if current else None
+        clicked = driver.execute_script(
+            """
+            const button = Array.from(document.querySelectorAll('[onclick]')).find((el) =>
+              (el.getAttribute('onclick') || '').includes("episode_sort('down')"));
+            if (!button) return false;
+            button.click();
+            return true;
+            """
+        )
+        if clicked:
+            WebDriverWait(driver, 45).until(
+                lambda d: (
+                    (_novelpia_collect_current_page(d) or [{}])[0].get("id")
+                    not in (None, previous_id)
+                )
+            )
+
+    notices = _novelpia_collect_notices(driver)
+    total_pages = _novelpia_page_count(driver)
+    print(_novelpia_text(
+        f"作品：{title}；章节列表共 {total_pages} 页。正在逐页读取网页列表……",
+        f"Novel: {title}; {total_pages} chapter-list page(s). Reading the rendered list...",
+    ))
+
+    chapters = []
+    seen_ids = set()
+    for page_number in range(1, total_pages + 1):
+        if page_number > 1:
+            current = _novelpia_collect_current_page(driver)
+            previous_id = current[0]["id"] if current else None
+            _novelpia_go_to_list_page(driver, page_number, novel_id, previous_id)
+            time.sleep(random.uniform(1.2, 2.4))
+        for chapter in _novelpia_collect_current_page(driver):
+            if chapter["id"] not in seen_ids:
+                chapters.append(chapter)
+                seen_ids.add(chapter["id"])
+        print(_novelpia_text(
+            f"  列表页 {page_number}/{total_pages}：累计 {len(chapters)} 章",
+            f"  List page {page_number}/{total_pages}: {len(chapters)} chapter(s)",
+        ))
+
+    last_ep = 0
+    for chapter in chapters:
+        if chapter.get("ep") is not None:
+            last_ep = chapter["ep"]
+        chapter["range_ep"] = last_ep
+    selected = [
+        chapter for chapter in chapters
+        if chapter.get("range_ep", 0) >= start_ep
+        and (end_ep is None or chapter.get("range_ep", 0) <= end_ep)
+    ]
+    jobs = notices + selected
+    if not jobs:
+        print(f"{r}[{w}X{r}]{w} " + _novelpia_text(
+            "所选范围没有章节。", "No chapters matched the selected range."
+        ))
+        return
+
+    folder_path = os.path.join(os.getcwd(), _novelpia_safe_name(f"[{novel_id}] {title}"))
+    os.makedirs(folder_path, exist_ok=True)
+    delay_min = max(2.0, float(SETTINGS.get("novelpia_delay_min", 4.0)))
+    delay_max = max(delay_min, float(SETTINGS.get("novelpia_delay_max", 7.0)))
+    print(_novelpia_text(
+        f"输出：{folder_path}\n单线程、单标签页；每章随机等待 {delay_min:.1f}–{delay_max:.1f} 秒。"
+        "遇到登录、验证或权限页会立即停止。",
+        f"Output: {folder_path}\nOne tab and one request at a time; random {delay_min:.1f}-{delay_max:.1f}s "
+        "pause per chapter. Login, verification, or access pages stop the run.",
+    ))
+
+    notice_no = bonus_no = completed = 0
+    for index, chapter in enumerate(jobs, 1):
+        if chapter["kind"] == "notice":
+            notice_no += 1
+            prefix = f"Notice {notice_no:04d}"
+            file_prefix = f"{notice_no:03d} - Notice"
+        elif chapter["kind"] == "bonus":
+            bonus_no += 1
+            prefix = f"Bonus {bonus_no:04d}"
+            file_prefix = f"{len(notices) + int(chapter.get('range_ep', 0)):03d}.{bonus_no} - BONUS"
+        else:
+            prefix = f"Episode {int(chapter['ep']):04d}"
+            file_prefix = f"{len(notices) + int(chapter['ep']):03d}"
+
+        safe_title = _novelpia_safe_name(chapter.get("title") or prefix)
+        file_path = os.path.join(folder_path, f"{file_prefix} - {safe_title}.txt")
+        legacy_path = next(
+            (
+                path for path in list_txt_files(folder_path)
+                if _novelpia_name_key(os.path.splitext(os.path.basename(path))[0]).endswith(
+                    _novelpia_name_key(safe_title)
+                )
+                and _novelpia_saved_file_is_valid(path)
+            ),
+            None,
+        )
+        if legacy_path and os.path.normcase(legacy_path) != os.path.normcase(file_path):
+            print(
+                f"{y}[{w}~{y}]{w} {prefix}: "
+                + _novelpia_text(
+                    f"检测到已有章节 {os.path.basename(legacy_path)}，跳过。",
+                    f"matching existing chapter {os.path.basename(legacy_path)}; skipped.",
+                )
+            )
+            completed += 1
+            continue
+        if _novelpia_saved_file_is_valid(file_path):
+            print(f"{y}[{w}~{y}]{w} {prefix}: " + _novelpia_text("已存在，跳过。", "already saved; skipped."))
+            completed += 1
+            continue
+        if os.path.exists(file_path):
+            print(f"{y}[{w}!{y}]{w} {prefix}: " + _novelpia_text(
+                "检测到旧的无效或未清洗文件，将重新抓取覆盖。",
+                "old invalid or unclean file detected; re-downloading.",
+            ))
+
+        print(f"{T()}[{T2()}!{T()}]{w} [{index}/{len(jobs)}] {prefix} - {safe_title}")
+        try:
+            body = _novelpia_load_chapter(driver, chapter, base_url)
+        except (PermissionError, TimeoutException) as exc:
+            print(f"{r}[{w}X{r}]{w} {exc}")
+            print(_novelpia_text(
+                "为避免连续触发站点保护，本次任务已在首个失败章节处停止；已保存文件可直接续跑。",
+                "To avoid repeated protection triggers, the run stopped at the first failed chapter. "
+                "Saved files can be resumed.",
+            ))
+            break
+
+        content = body if body.startswith(safe_title) else f"{safe_title}\n\n{body}"
+        save_to_file(file_path, content.rstrip() + "\n")
+        completed += 1
+        if index < len(jobs):
+            wait_seconds = random.uniform(delay_min, delay_max)
+            print(_novelpia_text(
+                f"  已保存；等待 {wait_seconds:.1f} 秒……",
+                f"  Saved; waiting {wait_seconds:.1f}s...",
+            ))
+            time.sleep(wait_seconds)
+
+    print(_novelpia_text(
+        f"已保存/已存在 {completed}/{len(jobs)} 个章节文件。",
+        f"Saved/already present: {completed}/{len(jobs)} chapter file(s).",
+    ))
+    if completed == len(jobs) and SETTINGS.get("download_format") == "epub":
+        save_as_epub(folder_path, title)
+
+
 # ─────────────────────────────────────────────
 #  SITE HANDLER REGISTRY + DISPATCHER
 # ─────────────────────────────────────────────
 
 SITE_HANDLERS = {
+    'novelpia.com': handle_novelpia,
     'novelfire': handle_novelfire,
     'wetriedtls': handle_wetriedtls,
     'helioscans': handle_helioscans,
@@ -1630,14 +2303,15 @@ SITE_HANDLERS = {
 }
 
 def dispatch_handler(driver, novel_url):
+    url_lower = novel_url.lower()
     # sbxh uses saved settings — no redundant prompts
-    if 'sbxh' in novel_url:
+    if 'sbxh' in url_lower:
         do_translate = SETTINGS["translate"]
         handle_sbxh2(driver, novel_url, do_translate)
         return
 
     for site_key, handler_func in SITE_HANDLERS.items():
-        if site_key in novel_url:
+        if site_key in url_lower:
             handler_func(driver, novel_url)
             return
 
@@ -1725,10 +2399,11 @@ def main():
                 continue
 
             # Check supported sites (sbxh included)
-            matched = 'sbxh' in novel_url
+            url_lower = novel_url.lower()
+            matched = 'sbxh' in url_lower
             if not matched:
                 for site_key in SITE_HANDLERS:
-                    if site_key in novel_url:
+                    if site_key in url_lower:
                         matched = True
                         break
 
@@ -1738,7 +2413,8 @@ def main():
                 continue
 
             sys.stderr = open(os.devnull, 'w')
-            is_sbxh = 'sbxh' in novel_url
+            is_sbxh = 'sbxh' in url_lower
+            is_novelpia = 'novelpia.com' in url_lower
             driver = None
 
             if is_sbxh:
@@ -1773,6 +2449,16 @@ def main():
                 except Exception as e:
                     print(f"{r}[{w}X{r}]{w} Failed to launch undetected Chrome: {e}")
                     print(f"{y}[{w}!{y}]{w} Run:  pip install undetected-chromedriver --upgrade")
+                    time.sleep(3)
+                    continue
+            elif is_novelpia:
+                # Novelpia runs visibly with a dedicated persistent profile.
+                # Login, age checks, and CAPTCHA are completed by the user in
+                # the normal page; no LOGINKEY or password is stored by Nibble.
+                try:
+                    driver = create_plain_chrome_driver(create_novelpia_chrome_options())
+                except (ValueError, RuntimeError, selenium.common.exceptions.WebDriverException) as e:
+                    print(f"{r}[{w}X{r}]{w} Could not launch the Novelpia browser: {e}")
                     time.sleep(3)
                     continue
             else:
@@ -2088,6 +2774,7 @@ GUI_TEXT = {
         "scrape": "抓取小说",
         "convert": "TXT 文件夹转 EPUB",
         "translate_tool": "大模型翻译",
+        "polish_tool": "翻译润色",
         "settings": "设置",
         "reset_driver": "重置 ChromeDriver",
         "clear_log": "清空日志",
@@ -2118,11 +2805,27 @@ GUI_TEXT = {
         "source_type": "来源类型",
         "source_path": "来源路径",
         "output_path": "输出路径",
+        "translation_path": "译文目录",
+        "source_file": "原文 TXT",
+        "translation_file": "译文 TXT",
+        "output_file": "输出 TXT",
+        "source_folder": "原文目录",
+        "output_folder": "输出目录",
+        "default_glossaries": "默认术语表",
+        "extra_glossaries": "追加术语表",
+        "add_glossary": "导入追加术语表",
+        "clear_glossaries": "清空追加",
+        "no_default_glossary": "译文目录中未找到默认术语表",
         "glossary": "术语表",
         "manual_glossary": "人工术语表",
         "machine_glossary": "机器术语表",
         "current_glossary": "当前术语表",
         "glossary_view": "术语表类型",
+        "glossary_use": "翻译使用",
+        "glossary_use_both": "人工 + 机器",
+        "glossary_use_manual": "仅人工",
+        "glossary_use_machine": "仅机器",
+        "glossary_use_none": "不使用",
         "search_glossary": "搜索术语",
         "auto_glossary": "AI 自动增加术语表",
         "browse": "浏览",
@@ -2132,6 +2835,7 @@ GUI_TEXT = {
         "edit_term": "编辑",
         "delete_term": "删除",
         "start_translate": "开始翻译",
+        "start_polish": "开始润色",
         "glossary_guide": "术语生成规范",
         "term_src": "原文",
         "term_dst": "译文",
@@ -2145,8 +2849,15 @@ GUI_TEXT = {
         "select_source": "选择来源",
         "select_output": "选择输出",
         "missing_translate_config": "请填写 API Key、模型、来源路径和输出路径。",
+        "missing_polish_config": "请填写 API Key 和模型，并选择有效的原文目录、译文目录。",
+        "missing_source_pairs": "以下译文没有找到同名原文 TXT：{names}",
         "test_api": "测试 API / 获取模型",
         "style_guide": "文风指导",
+        "polish_guide": "润色指导",
+        "polish_chunk_settings": "分段设置",
+        "polish_chunk_enabled": "启用分段",
+        "polish_lines_per_chunk": "每段行数",
+        "invalid_polish_lines": "每段行数必须是大于 0 的整数。",
         "style_saved": "文风指导已保存。",
         "glossary_guide_saved": "术语生成规范已保存。",
         "api_unavailable": "该 API 不可用，无法获取模型列表。",
@@ -2168,7 +2879,33 @@ GUI_TEXT = {
         "log_translating_epub_chapter": "正在翻译 EPUB 章节 {current}/{total}：{name}",
         "log_translated_epub_created": "已生成翻译后的 EPUB：{path}",
         "log_machine_glossary_loaded": "已自动加载机器术语表：{path}（{count} 条）\n",
-    },
+        "log_polishing_file": "正在润色文件：{name}",
+        "log_polish_stage": "润色阶段：{stage}",
+        "log_polish_done": "已生成润色 TXT 文件夹：{path}",
+        "invalid_polish_output": "输出目录不能与译文目录相同。",
+        "polish_stage_glossary_check": "术语校对",
+        "polish_stage_symbol_check": "符号对照",
+        "polish_stage_polish": "自然润色",
+        "polish_stage_logic_check": "逻辑病句检查",
+        "novelpia_login_box": "Novelpia 登录",
+        "novelpia_profile": "资料目录",
+        "novelpia_login_help": "会员章需要先用普通 Chrome 登录到 Nibble 专用资料目录；抓取时会复用这个登录态。",
+        "novelpia_open_login": "打开登录窗口",
+        "novelpia_check_login": "检测登录状态",
+        "novelpia_open_profile": "打开资料目录",
+        "novelpia_profile_dir": "Novelpia 资料目录",
+        "novelpia_auto_find": "自动寻找",
+        "novelpia_auto_found": "已自动找到 Chrome，并设置 Novelpia 资料目录：\n{path}",
+        "novelpia_delay_min": "Novelpia 最小等待秒数",
+        "novelpia_delay_max": "Novelpia 最大等待秒数",
+        "invalid_number_title": "数字无效",
+        "invalid_number": "请填写有效的等待秒数。",
+        "novelpia_login_ready": "已打开普通 Chrome。请在里面登录 Novelpia；完成后关闭这个 Chrome 窗口，再回到这里点确定。",
+        "novelpia_login_manual_opened": "已用普通 Chrome 打开 Novelpia 登录窗口。这个窗口不会被 Google 当作 WebDriver 控制的浏览器。",
+        "novelpia_login_detected": "已检测到 Novelpia 登录态。",
+        "novelpia_login_missing": "未检测到 Novelpia 登录态。请在这个 Nibble 专用浏览器窗口里登录。",
+        "novelpia_browser_closed": "Novelpia 登录窗口已关闭。\n",
+        },
     "en": {
         "title": "Nibble",
         "ready": "Ready",
@@ -2177,6 +2914,7 @@ GUI_TEXT = {
         "scrape": "Scrape Novel",
         "convert": "Convert Folder to EPUB",
         "translate_tool": "LLM Translate",
+        "polish_tool": "Translation Polish",
         "settings": "Settings",
         "reset_driver": "Reset ChromeDriver",
         "clear_log": "Clear Log",
@@ -2207,11 +2945,27 @@ GUI_TEXT = {
         "source_type": "Source Type",
         "source_path": "Source Path",
         "output_path": "Output Path",
+        "translation_path": "Translation Folder",
+        "source_file": "Source TXT",
+        "translation_file": "Translation TXT",
+        "output_file": "Output TXT",
+        "source_folder": "Source Folder",
+        "output_folder": "Output Folder",
+        "default_glossaries": "Default Glossaries",
+        "extra_glossaries": "Additional Glossaries",
+        "add_glossary": "Import Additional Glossary",
+        "clear_glossaries": "Clear Additional",
+        "no_default_glossary": "No default glossary found beside the translation",
         "glossary": "Glossary",
         "manual_glossary": "Manual Glossary",
         "machine_glossary": "Machine Glossary",
         "current_glossary": "Current Glossary",
         "glossary_view": "Glossary View",
+        "glossary_use": "Use in Translation",
+        "glossary_use_both": "Manual + Machine",
+        "glossary_use_manual": "Manual only",
+        "glossary_use_machine": "Machine only",
+        "glossary_use_none": "None",
         "search_glossary": "Search Glossary",
         "auto_glossary": "AI Auto-add Glossary",
         "browse": "Browse",
@@ -2221,6 +2975,7 @@ GUI_TEXT = {
         "edit_term": "Edit",
         "delete_term": "Delete",
         "start_translate": "Start Translation",
+        "start_polish": "Start Polish",
         "glossary_guide": "Glossary Rules",
         "term_src": "Source",
         "term_dst": "Target",
@@ -2234,8 +2989,15 @@ GUI_TEXT = {
         "select_source": "Select Source",
         "select_output": "Select Output",
         "missing_translate_config": "Please fill API key, model, source path, and output path.",
+        "missing_polish_config": "Please fill the API key and model, then select valid source and translation folders.",
+        "missing_source_pairs": "No same-name source TXT was found for: {names}",
         "test_api": "Test API / Load Models",
         "style_guide": "Style Guide",
+        "polish_guide": "Polish Guide",
+        "polish_chunk_settings": "Chunk Settings",
+        "polish_chunk_enabled": "Split",
+        "polish_lines_per_chunk": "Lines per chunk",
+        "invalid_polish_lines": "Lines per chunk must be a positive integer.",
         "style_saved": "Style guide saved.",
         "glossary_guide_saved": "Glossary extraction rules saved.",
         "api_unavailable": "This API is unavailable; models could not be loaded.",
@@ -2257,6 +3019,32 @@ GUI_TEXT = {
         "log_translating_epub_chapter": "Translating EPUB chapter {current}/{total}: {name}",
         "log_translated_epub_created": "Translated EPUB created: {path}",
         "log_machine_glossary_loaded": "Machine glossary loaded: {path} ({count} terms)\n",
+        "log_polishing_file": "Polishing file: {name}",
+        "log_polish_stage": "Polish stage: {stage}",
+        "log_polish_done": "Polished TXT folder created: {path}",
+        "invalid_polish_output": "The output folder cannot be the same as the translation folder.",
+        "polish_stage_glossary_check": "glossary check",
+        "polish_stage_symbol_check": "symbol alignment",
+        "polish_stage_polish": "natural polish",
+        "polish_stage_logic_check": "logic check",
+        "novelpia_login_box": "Novelpia Login",
+        "novelpia_profile": "Profile",
+        "novelpia_login_help": "Member chapters require logging in with regular Chrome into Nibble's dedicated profile; scraping reuses that session.",
+        "novelpia_open_login": "Open Login Browser",
+        "novelpia_check_login": "Check Login",
+        "novelpia_open_profile": "Open Profile Folder",
+        "novelpia_profile_dir": "Novelpia Profile Folder",
+        "novelpia_auto_find": "Auto Find",
+        "novelpia_auto_found": "Chrome was found and the Novelpia profile folder was set to:\n{path}",
+        "novelpia_delay_min": "Novelpia Min Delay Seconds",
+        "novelpia_delay_max": "Novelpia Max Delay Seconds",
+        "invalid_number_title": "Invalid Number",
+        "invalid_number": "Please enter valid delay seconds.",
+        "novelpia_login_ready": "Regular Chrome is open. Log in to Novelpia there; when done, close that Chrome window, then return here and click OK.",
+        "novelpia_login_manual_opened": "Opened the Novelpia login window with regular Chrome. Google should not see this as a WebDriver-controlled browser.",
+        "novelpia_login_detected": "Novelpia login session detected.",
+        "novelpia_login_missing": "No Novelpia login session detected. Log in inside this Nibble-dedicated browser window.",
+        "novelpia_browser_closed": "Novelpia login browser closed.\n",
     },
 }
 
@@ -2278,7 +3066,8 @@ def clean_gui_output(text):
 
 
 def load_glossary_file(path):
-    with open(path, "r", encoding="utf-8") as f:
+    # utf-8-sig transparently accepts both regular UTF-8 and UTF-8 with BOM.
+    with open(path, "r", encoding="utf-8-sig") as f:
         data = json.load(f)
         entries = []
     if isinstance(data, list):
@@ -2408,6 +3197,53 @@ def split_translation_chunks(text, max_chars=4500):
     return chunks or [text]
 
 
+def polish_chunk_count(text, target_lines=80, max_chunks=None):
+    line_count = max(1, len((text or "").replace("\r", "").splitlines()))
+    target_lines = max(1, int(target_lines or 1))
+    chunk_count = max(1, (line_count + target_lines - 1) // target_lines)
+    if max_chunks is not None:
+        chunk_count = min(max(1, int(max_chunks)), chunk_count)
+    return chunk_count
+
+
+def split_text_into_line_chunks(text, chunk_count, return_separators=False):
+    text = (text or "").replace("\r", "").strip()
+    if not text:
+        return [""]
+    lines = text.splitlines()
+    chunk_count = max(1, min(int(chunk_count or 1), len(lines)))
+    chunks = []
+    separators = []
+    start = 0
+    for index in range(chunk_count):
+        remaining_chunks = chunk_count - index
+        remaining_lines = len(lines) - start
+        size = (remaining_lines + remaining_chunks - 1) // remaining_chunks
+        end = len(lines) if index == chunk_count - 1 else start + size
+        if index < chunk_count - 1:
+            search_start = max(start + 1, end - 8)
+            search_end = min(len(lines) - (remaining_chunks - 1), end + 8)
+            blank_lines = [pos for pos in range(search_start, search_end + 1) if not lines[pos - 1].strip()]
+            if blank_lines:
+                end = min(blank_lines, key=lambda pos: abs(pos - end))
+        chunks.append("\n".join(lines[start:end]).strip())
+        if index < chunk_count - 1:
+            separators.append("\n\n" if end > start and not lines[end - 1].strip() else "\n")
+        start = end
+    if return_separators:
+        return chunks, separators
+    return chunks
+
+
+def join_polished_chunks(chunks, separators):
+    if not chunks:
+        return ""
+    result = chunks[0]
+    for index, chunk in enumerate(chunks[1:]):
+        result += separators[index] + chunk
+    return result
+
+
 def call_llm_translate(text, glossary_entries, api_base, api_key, model, style_guide=""):
     if not api_key:
         raise ValueError("Missing API key.")
@@ -2436,14 +3272,7 @@ def call_llm_translate(text, glossary_entries, api_base, api_key, model, style_g
         ],
         "temperature": 0.2,
     }
-    chat_url = chat_completion_url_from_base(api_base)
-    resp = requests.post(chat_url, headers=headers, json=payload, timeout=180)
-    try:
-        resp.raise_for_status()
-    except requests.HTTPError as e:
-        detail = (resp.text or "")[:800]
-        raise requests.HTTPError(f"{e}\nURL: {chat_url}\nResponse: {detail}") from e
-    data = resp.json()
+    data = post_chat_completion(api_base, headers, payload)
     return data["choices"][0]["message"]["content"].strip()
 
 
@@ -2500,6 +3329,30 @@ def fetch_llm_models(api_base, api_key):
     return models
 
 
+def post_chat_completion(api_base, headers, payload, timeout=(30, 300), retries=2):
+    chat_url = chat_completion_url_from_base(api_base)
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.post(chat_url, headers=headers, json=payload, timeout=timeout)
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                detail = (resp.text or "")[:800]
+                raise requests.HTTPError(f"{e}\nURL: {chat_url}\nResponse: {detail}") from e
+            return resp.json()
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last_error = e
+            if attempt >= retries:
+                break
+            wait_seconds = 2 + attempt * 3
+            print(f"API request timed out or disconnected. Retrying {attempt + 1}/{retries} after {wait_seconds}s...")
+            time.sleep(wait_seconds)
+    raise RuntimeError(
+        "API 请求超时。请尝试换更快的模型，或稍后重试；程序已经把润色分块调小并自动重试，但服务端仍未及时返回。"
+    ) from last_error
+
+
 def translate_long_text_with_llm(text, glossary_entries, api_base, api_key, model):
     translated = []
     for idx, chunk in enumerate(split_translation_chunks(text), 1):
@@ -2552,14 +3405,261 @@ def translate_long_text_with_llm_progress(text, glossary_entries, api_config, pa
     return "\n\n".join(translated)
 
 
+def paired_source_file(source_folder, translated_file):
+    if not source_folder:
+        return None
+    exact = os.path.join(source_folder, os.path.basename(translated_file))
+    if os.path.exists(exact):
+        return exact
+    translated_stem = os.path.splitext(os.path.basename(translated_file))[0]
+    for path in list_txt_files(source_folder):
+        if os.path.splitext(os.path.basename(path))[0] == translated_stem:
+            return path
+    return None
+
+
+def call_llm_polish_stage(source_text, translated_text, glossary_entries, api_config, stage, polish_guide=""):
+    if not api_config.get("api_key"):
+        raise ValueError("Missing API key.")
+    probe_text = "\n".join([source_text or "", translated_text or ""])
+    terms = relevant_glossary_entries(probe_text, glossary_entries, limit=200)
+    glossary_text = "\n".join(
+        f"- {e['src']} => {e['dst']}" + (f" ({e.get('info', '')})" if e.get("info") else "")
+        for e in terms
+    )
+    stage_instructions = {
+        "glossary_check": (
+            "First pass for the entire chapter: compare the Korean source and Chinese translation against the glossary. "
+            "Correct names, special terms, titles, organizations, skills, and repeated terminology. "
+            "Apply every relevant glossary entry consistently. Do not polish style yet unless needed to make the correction grammatical."
+        ),
+        "symbol_check": (
+            "Second pass for the entire chapter: compare the source and translation line by line and correct the translation's symbols and layout. "
+            "Make quotation marks, brackets, dashes, ellipses, separators, message/reply markers, and paragraph breaks correspond to the source. "
+            "Use natural Chinese punctuation forms, preserve the words and terminology already corrected, and do not rewrite the prose yet."
+        ),
+        "polish": (
+            "Final pass for this approximately 80-line section: compare it closely with the matching Korean source and polish the Chinese text. "
+            "Follow the polishing guide. Keep the plot, meaning, tone, speaker intent, corrected symbols, paragraph breaks, and glossary terms intact. "
+            "Repair omitted subjects or other necessary sentence elements when the context requires them."
+        ),
+        "logic_check": (
+            "Final pass: check for awkward phrasing, bad sentences, contradiction, missing logic, wrong pronouns, and unclear subjects. "
+            "Fix only real problems and output the final polished Chinese text."
+        ),
+    }
+    system_prompt = (
+        "You are a professional Korean-to-Chinese web novel translation editor. "
+        "Output only the edited Chinese text. Do not add notes, analysis, markdown, or headings."
+    )
+    user_prompt = (
+        stage_instructions.get(stage, stage_instructions["polish"]) +
+        "\n\nPolishing guide:\n" + (polish_guide.strip() or "(none)") +
+        "\n\nGlossary:\n" + (glossary_text or "(none)") +
+        "\n\nKorean source for reference:\n" + (source_text.strip() or "(not provided)") +
+        "\n\nChinese text to edit:\n" + translated_text
+    )
+    headers = {"Authorization": f"Bearer {api_config['api_key']}", "Content-Type": "application/json"}
+    payload = {
+        "model": api_config["model"],
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.15,
+    }
+    data = post_chat_completion(api_config["api_base"], headers, payload)
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def run_configured_polish_stage(
+    source_text, translated_text, glossary_entries, api_config, stage,
+    split_enabled=False, target_lines=80, pause_event=None, stop_event=None,
+):
+    chunk_count = polish_chunk_count(translated_text, target_lines) if split_enabled else 1
+    source_chunks = split_text_into_line_chunks(source_text, chunk_count)
+    translated_chunks, chunk_separators = split_text_into_line_chunks(
+        translated_text, chunk_count, return_separators=True
+    )
+    edited_chunks = []
+    for chunk_index, translated_chunk in enumerate(translated_chunks, 1):
+        if should_stop(stop_event):
+            break
+        wait_if_paused(pause_event)
+        source_ref = source_chunks[chunk_index - 1] if chunk_index <= len(source_chunks) else source_text
+        label = gui_text(f"polish_stage_{stage}")
+        if len(translated_chunks) > 1:
+            label += f" {chunk_index}/{len(translated_chunks)}"
+        print(gui_text("log_polish_stage").format(stage=label))
+        edited_chunks.append(call_llm_polish_stage(
+            source_ref,
+            translated_chunk,
+            glossary_entries,
+            api_config,
+            stage,
+            api_config.get("polish_guide", ""),
+        ))
+    if should_stop(stop_event) or not edited_chunks:
+        return ""
+    return join_polished_chunks(edited_chunks, chunk_separators)
+
+
+def polish_long_text_with_llm_progress(source_text, translated_text, glossary_entries, api_config, pause_event=None, stop_event=None):
+    source_text = sanitize_translation_source_text(source_text)
+    text = sanitize_translation_source_text(translated_text)
+    stage_chunking = api_config.get("stage_chunking", {})
+
+    for stage in ("glossary_check", "symbol_check", "polish"):
+        settings = stage_chunking.get(stage, {})
+        text = run_configured_polish_stage(
+            source_text,
+            text,
+            glossary_entries,
+            api_config,
+            stage,
+            split_enabled=bool(settings.get("enabled", stage == "polish")),
+            target_lines=settings.get("lines", 80),
+            pause_event=pause_event,
+            stop_event=stop_event,
+        )
+        if should_stop(stop_event) or not text.strip():
+            return ""
+    return text
+
+
+def default_polish_glossary_paths(translation_path):
+    if not translation_path:
+        return []
+    elif os.path.isdir(translation_path):
+        folder = os.path.abspath(translation_path)
+    else:
+        folder = os.path.dirname(os.path.abspath(translation_path))
+    paths = []
+    for name in ("_machine_glossary.json", "_manual_glossary.json"):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            paths.append(path)
+    return paths
+
+
+def default_polish_output_folder(translation_folder):
+    normalized = os.path.normpath(translation_folder)
+    parent = os.path.dirname(normalized)
+    folder_name = os.path.basename(normalized)
+    return os.path.join(parent, folder_name + "_polished")
+
+
+def load_polish_glossaries(translation_path, extra_paths=None):
+    default_paths = default_polish_glossary_paths(translation_path)
+    machine_path = next((p for p in default_paths if os.path.basename(p) == "_machine_glossary.json"), None)
+    manual_path = next((p for p in default_paths if os.path.basename(p) == "_manual_glossary.json"), None)
+    entries_by_source = {}
+    order = []
+
+    def add_entries(path, overwrite=False):
+        if not path or not os.path.isfile(path):
+            return
+        for entry in load_glossary_file(path):
+            src = entry.get("src", "")
+            if src not in entries_by_source:
+                order.append(src)
+                entries_by_source[src] = entry
+            elif overwrite:
+                entries_by_source[src] = entry
+
+    add_entries(machine_path)
+    add_entries(manual_path, overwrite=True)
+    for path in extra_paths or []:
+        add_entries(path, overwrite=False)
+    return [entries_by_source[src] for src in order], default_paths
+
+
+def polish_txt_file_with_llm(
+    source_file, translation_file, output_file, glossary_entries, api_config,
+    progress_callback=None, pause_event=None, stop_event=None,
+):
+    with open(source_file, "r", encoding="utf-8-sig", errors="replace") as f:
+        source_text = f.read()
+    with open(translation_file, "r", encoding="utf-8-sig", errors="replace") as f:
+        translated_text = f.read()
+    print(gui_text("log_polishing_file").format(name=os.path.basename(translation_file)))
+    start_time = time.time()
+    polished = polish_long_text_with_llm_progress(
+        source_text, translated_text, glossary_entries, api_config, pause_event, stop_event
+    )
+    if not should_stop(stop_event) and polished.strip():
+        save_to_file(output_file, polished)
+        if progress_callback:
+            progress_callback(1, 1, os.path.basename(translation_file), start_time, 1)
+        print(gui_text("log_polish_done").format(path=output_file))
+    return output_file
+
+
+def polish_txt_folder_with_llm(
+    source_folder, translation_folder, output_folder, glossary_entries, api_config,
+    progress_callback=None, pause_event=None, stop_event=None,
+):
+    if not output_folder:
+        output_folder = default_polish_output_folder(translation_folder)
+    if os.path.normcase(os.path.abspath(output_folder)) == os.path.normcase(os.path.abspath(translation_folder)):
+        raise ValueError(gui_text("invalid_polish_output"))
+    files = sorted(list_txt_files(translation_folder))
+    if not files:
+        print(gui_text("log_no_txt_files"))
+        return output_folder
+    missing_names = [
+        os.path.basename(path)
+        for path in files
+        if not os.path.isfile(os.path.join(source_folder, os.path.basename(path)))
+    ]
+    if missing_names:
+        preview = ", ".join(missing_names[:10])
+        if len(missing_names) > 10:
+            preview += f" ... (+{len(missing_names) - 10})"
+        raise FileNotFoundError(gui_text("missing_source_pairs").format(names=preview))
+    os.makedirs(output_folder, exist_ok=True)
+    start_time = time.time()
+    completed = 0
+    total = len(files)
+    for index, file_path in enumerate(files, 1):
+        if should_stop(stop_event):
+            print(gui_text("log_translation_stopped"))
+            break
+        wait_if_paused(pause_event)
+        name = os.path.basename(file_path)
+        out_path = os.path.join(output_folder, name)
+        if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            print(gui_text("log_skipping_existing").format(name=name))
+            completed += 1
+            if progress_callback:
+                progress_callback(index, total, name, start_time, completed)
+            continue
+        print(gui_text("log_polishing_file").format(name=name))
+        source_path = os.path.join(source_folder, name)
+        with open(source_path, "r", encoding="utf-8-sig", errors="replace") as f:
+            source_text = f.read()
+        with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
+            translated_text = f.read()
+        polished = polish_long_text_with_llm_progress(source_text, translated_text, glossary_entries, api_config, pause_event, stop_event)
+        if should_stop(stop_event) and not polished.strip():
+            break
+        save_to_file(out_path, polished)
+        completed += 1
+        if progress_callback:
+            progress_callback(index, total, name, start_time, completed)
+    print(gui_text("log_polish_done").format(path=output_folder))
+    return output_folder
+
+
 def translate_txt_folder_with_llm(
     source_folder, output_folder, glossary_entries, api_config,
     progress_callback=None, pause_event=None, stop_event=None,
     auto_glossary=False, machine_glossary_entries=None, machine_glossary_path=None,
+    use_machine_glossary=True,
     glossary_callback=None,
 ):
     os.makedirs(output_folder, exist_ok=True)
-    files = sorted(glob.glob(os.path.join(source_folder, "*.txt")))
+    files = sorted(list_txt_files(source_folder))
     if not files:
         print(gui_text("log_no_txt_files"))
         return
@@ -2582,7 +3682,9 @@ def translate_txt_folder_with_llm(
         print(gui_text("log_translating_file").format(name=name))
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             text = f.read()
-        combined_glossary = glossary_entries + (machine_glossary_entries or [])
+        combined_glossary = list(glossary_entries)
+        if use_machine_glossary:
+            combined_glossary += machine_glossary_entries or []
         translated = translate_long_text_with_llm_progress(text, combined_glossary, api_config, pause_event, stop_event)
         if should_stop(stop_event) and not translated.strip():
             break
@@ -2618,6 +3720,7 @@ def translate_epub_with_llm(
     source_epub, output_epub, glossary_entries, api_config,
     progress_callback=None, pause_event=None, stop_event=None,
     auto_glossary=False, machine_glossary_entries=None, machine_glossary_path=None,
+    use_machine_glossary=True,
     glossary_callback=None,
 ):
     from ebooklib import epub
@@ -2650,7 +3753,9 @@ def translate_epub_with_llm(
             if progress_callback:
                 progress_callback(idx, total, chap_title, start_time, completed)
             continue
-        combined_glossary = glossary_entries + (machine_glossary_entries or [])
+        combined_glossary = list(glossary_entries)
+        if use_machine_glossary:
+            combined_glossary += machine_glossary_entries or []
         translated = translate_long_text_with_llm_progress(text, combined_glossary, api_config, pause_event, stop_event)
         if should_stop(stop_event) and not translated.strip():
             break
@@ -2720,6 +3825,7 @@ class NibbleGUI:
         self.status_var = tk.StringVar(value=gui_text("ready"))
         self.progress_var = tk.StringVar(value=gui_text("progress_idle"))
         self.url_var = tk.StringVar(value="https://sbxh4.com/novel/26305")
+        self.novelpia_profile_var = tk.StringVar()
         self.active_glossary_search_var = tk.StringVar()
         self.labels = {}
         self.buttons = {}
@@ -2826,6 +3932,30 @@ class NibbleGUI:
         self.labels["novel_url"].grid(row=0, column=0, sticky="w", padx=(0, 8))
         ttk.Entry(top, textvariable=self.url_var).grid(row=0, column=1, sticky="ew")
 
+        self.novelpia_frame = ttk.LabelFrame(top, text=gui_text("novelpia_login_box"), padding=(10, 6, 10, 8))
+        self.novelpia_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.novelpia_frame.columnconfigure(1, weight=1)
+        self.labels["novelpia_profile"] = ttk.Label(self.novelpia_frame, text=gui_text("novelpia_profile"))
+        self.labels["novelpia_profile"].grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Entry(self.novelpia_frame, textvariable=self.novelpia_profile_var, state="readonly").grid(row=0, column=1, sticky="ew")
+        self.labels["novelpia_login_help"] = ttk.Label(
+            self.novelpia_frame,
+            text=gui_text("novelpia_login_help"),
+            wraplength=760,
+        )
+        self.labels["novelpia_login_help"].grid(row=1, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        novelpia_buttons = ttk.Frame(self.novelpia_frame)
+        novelpia_buttons.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        for key, command in [
+            ("novelpia_open_login", self.open_novelpia_login_browser),
+            ("novelpia_check_login", self.check_novelpia_login),
+            ("novelpia_open_profile", self.open_novelpia_profile_folder),
+        ]:
+            btn = ttk.Button(novelpia_buttons, text=gui_text(key), command=command)
+            btn.pack(side="left", padx=(0, 8))
+            self.buttons[key] = btn
+        self.refresh_novelpia_profile_label()
+
         buttons = ttk.Frame(root, padding=(12, 0, 12, 8))
         buttons.grid(row=1, column=0, sticky="ew")
 
@@ -2834,6 +3964,7 @@ class NibbleGUI:
             ("scrape", self.start_scrape),
             ("convert", self.start_convert),
             ("translate_tool", self.open_translate_window),
+            ("polish_tool", self.open_polish_window),
             ("settings", self.open_settings),
             ("reset_driver", self.reset_driver_path),
             ("clear_log", self.clear_log),
@@ -2843,6 +3974,8 @@ class NibbleGUI:
             self.buttons[key] = btn
             if key != "clear_log":
                 self.action_buttons.append(btn)
+        for key in ("novelpia_open_login", "novelpia_check_login", "novelpia_open_profile"):
+            self.action_buttons.append(self.buttons[key])
 
         self.pause_button = ttk.Button(buttons, text=gui_text("pause"), command=self.toggle_pause, state="disabled")
         self.pause_button.pack(side="left", padx=(8, 0))
@@ -2931,6 +4064,7 @@ class NibbleGUI:
             label.configure(text=gui_text(key))
         for key, button in self.buttons.items():
             button.configure(text=gui_text(key))
+        self.novelpia_frame.configure(text=gui_text("novelpia_login_box"))
         self.active_glossary_frame.configure(text=gui_text("current_glossary"))
         self.active_glossary_search_label.configure(text=gui_text("search_glossary"))
         for col, key in [
@@ -2946,6 +4080,7 @@ class NibbleGUI:
             self.progress_var.set(gui_text("progress_idle"))
         if not (self.worker and self.worker.is_alive()):
             self.status_var.set(gui_text("ready"))
+        self.refresh_novelpia_profile_label()
 
     def center_window(self, win, width=None, height=None):
         win.update_idletasks()
@@ -2985,6 +4120,67 @@ class NibbleGUI:
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", "end")
         self.log_text.configure(state="disabled")
+
+    def refresh_novelpia_profile_label(self):
+        try:
+            self.novelpia_profile_var.set(get_novelpia_profile_dir())
+        except Exception as exc:
+            self.novelpia_profile_var.set(str(exc))
+
+    def open_novelpia_login_browser(self):
+        def task():
+            proc = None
+            try:
+                proc = open_novelpia_regular_chrome_login()
+                print(gui_text("novelpia_login_manual_opened") + "\n")
+                print(gui_text("novelpia_login_ready"))
+                input(gui_text("novelpia_login_ready"))
+            finally:
+                if proc and proc.poll() is None:
+                    try:
+                        proc.terminate()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                print(gui_text("novelpia_browser_closed"))
+
+        self.run_worker(task)
+
+    def check_novelpia_login(self):
+        def task():
+            driver = None
+            try:
+                driver = create_plain_chrome_driver(create_novelpia_chrome_options())
+                driver.get("https://novelpia.com/")
+                if driver.get_cookie("LOGINKEY"):
+                    print(gui_text("novelpia_login_detected") + "\n")
+                else:
+                    print(gui_text("novelpia_login_missing") + "\n")
+            finally:
+                if driver:
+                    try:
+                        driver.quit()
+                    except Exception:
+                        pass
+
+        self.run_worker(task)
+
+    def open_novelpia_profile_folder(self):
+        try:
+            path = get_novelpia_profile_dir()
+            self.refresh_novelpia_profile_label()
+            if os.name == "nt":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as exc:
+            from tkinter import messagebox
+            messagebox.showerror(gui_text("error_title"), str(exc), parent=self.root)
 
     def poll_queues(self):
         from tkinter import simpledialog, messagebox
@@ -3261,7 +4457,7 @@ class NibbleGUI:
         self.run_worker(lambda: save_as_epub(folder, title))
 
     def open_settings(self):
-        from tkinter import ttk, messagebox
+        from tkinter import ttk, filedialog, messagebox
 
         win = self.tk.Toplevel(self.root)
         win.title(gui_text("settings"))
@@ -3274,9 +4470,18 @@ class NibbleGUI:
         theme = self.tk.StringVar(value=SETTINGS.get("theme", "purplepink"))
         current_lang = SETTINGS.get("gui_language", "zh")
         language = self.tk.StringVar(value="English" if current_lang == "en" else "中文")
+        configured_novelpia_profile = str(SETTINGS.get("novelpia_profile_dir", "") or "").strip()
+        try:
+            displayed_novelpia_profile = configured_novelpia_profile or auto_novelpia_profile_dir()
+        except Exception:
+            displayed_novelpia_profile = configured_novelpia_profile
+        novelpia_profile = self.tk.StringVar(value=displayed_novelpia_profile)
+        novelpia_delay_min = self.tk.StringVar(value=str(SETTINGS.get("novelpia_delay_min", 4.0)))
+        novelpia_delay_max = self.tk.StringVar(value=str(SETTINGS.get("novelpia_delay_max", 7.0)))
 
         frame = ttk.Frame(win, padding=14)
         frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(1, weight=1)
 
         ttk.Label(frame, text=gui_text("download_format")).grid(row=0, column=0, sticky="w", pady=5)
         ttk.Combobox(frame, textvariable=fmt, values=["txt", "epub"], state="readonly", width=24).grid(row=0, column=1, pady=5)
@@ -3290,21 +4495,75 @@ class NibbleGUI:
         ttk.Label(frame, text=gui_text("language")).grid(row=3, column=0, sticky="w", pady=5)
         ttk.Combobox(frame, textvariable=language, values=["中文", "English"], state="readonly", width=24).grid(row=3, column=1, pady=5)
 
+        ttk.Label(frame, text=gui_text("novelpia_profile_dir")).grid(row=4, column=0, sticky="w", pady=5)
+        ttk.Entry(frame, textvariable=novelpia_profile, width=46).grid(row=4, column=1, sticky="ew", pady=5)
+        def auto_find_novelpia_profile():
+            try:
+                path = auto_novelpia_profile_dir()
+                novelpia_profile.set(path)
+                messagebox.showinfo(
+                    gui_text("done_title"),
+                    gui_text("novelpia_auto_found").format(path=path),
+                    parent=win,
+                )
+            except Exception as exc:
+                messagebox.showerror(gui_text("error_title"), str(exc), parent=win)
+
+        profile_buttons = ttk.Frame(frame)
+        profile_buttons.grid(row=4, column=2, padx=(8, 0), pady=5)
+        ttk.Button(
+            profile_buttons,
+            text=gui_text("novelpia_auto_find"),
+            command=auto_find_novelpia_profile,
+        ).pack(side="left")
+        ttk.Button(
+            profile_buttons,
+            text=gui_text("browse"),
+            command=lambda: novelpia_profile.set(
+                filedialog.askdirectory(
+                    parent=win,
+                    initialdir=os.path.dirname(novelpia_profile.get()) if novelpia_profile.get() else os.getcwd(),
+                    title=gui_text("novelpia_profile_dir"),
+                )
+                or novelpia_profile.get()
+            ),
+        ).pack(side="left", padx=(6, 0))
+
+        ttk.Label(frame, text=gui_text("novelpia_delay_min")).grid(row=5, column=0, sticky="w", pady=5)
+        ttk.Entry(frame, textvariable=novelpia_delay_min, width=12).grid(row=5, column=1, sticky="w", pady=5)
+
+        ttk.Label(frame, text=gui_text("novelpia_delay_max")).grid(row=6, column=0, sticky="w", pady=5)
+        ttk.Entry(frame, textvariable=novelpia_delay_max, width=12).grid(row=6, column=1, sticky="w", pady=5)
+
         def save():
+            try:
+                delay_min = float(novelpia_delay_min.get())
+                delay_max = float(novelpia_delay_max.get())
+            except ValueError:
+                messagebox.showwarning(gui_text("invalid_number_title"), gui_text("invalid_number"), parent=win)
+                return
+            if delay_min < 2:
+                delay_min = 2.0
+            if delay_max < delay_min:
+                delay_max = delay_min
             SETTINGS["download_format"] = fmt.get()
             SETTINGS["translate"] = translate.get()
             SETTINGS["theme"] = theme.get()
             SETTINGS["gui_language"] = "en" if language.get() == "English" else "zh"
+            SETTINGS["novelpia_profile_dir"] = novelpia_profile.get().strip()
+            SETTINGS["novelpia_delay_min"] = delay_min
+            SETTINGS["novelpia_delay_max"] = delay_max
             save_config()
             self.refresh_language()
+            self.refresh_novelpia_profile_label()
             messagebox.showinfo(gui_text("saved_title"), gui_text("settings_saved"), parent=win)
             win.destroy()
 
         button_row = ttk.Frame(frame)
-        button_row.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        button_row.grid(row=7, column=0, columnspan=3, sticky="e", pady=(12, 0))
         ttk.Button(button_row, text=gui_text("save"), command=save).pack(side="left", padx=(0, 8))
         ttk.Button(button_row, text=gui_text("cancel"), command=win.destroy).pack(side="left")
-        self.center_window(win)
+        self.center_window(win, 680, 360)
 
     def open_translate_window(self):
         from tkinter import ttk, filedialog, messagebox, simpledialog
@@ -3330,6 +4589,27 @@ class NibbleGUI:
         source_path = self.tk.StringVar(value=SETTINGS.get("last_translate_source_path", ""))
         output_path = self.tk.StringVar(value=SETTINGS.get("last_translate_output_path", ""))
         glossary_view = self.tk.StringVar(value=gui_text("manual_glossary"))
+        glossary_modes = ("both", "manual", "machine", "none")
+        glossary_mode_keys = {
+            "both": "glossary_use_both",
+            "manual": "glossary_use_manual",
+            "machine": "glossary_use_machine",
+            "none": "glossary_use_none",
+        }
+
+        def glossary_mode_label(mode):
+            return gui_text(glossary_mode_keys.get(mode, "glossary_use_both"))
+
+        def glossary_mode_from_label(label):
+            for mode in glossary_modes:
+                if label == glossary_mode_label(mode):
+                    return mode
+            return "both"
+
+        saved_glossary_mode = SETTINGS.get("last_translate_glossary_mode", "both")
+        if saved_glossary_mode not in glossary_modes:
+            saved_glossary_mode = "both"
+        glossary_mode = self.tk.StringVar(value=glossary_mode_label(saved_glossary_mode))
         search_var = self.tk.StringVar()
         auto_glossary = self.tk.BooleanVar(value=False)
         if source_type.get() not in {"TXT Folder", "EPUB"}:
@@ -3437,6 +4717,16 @@ class NibbleGUI:
             width=14,
         )
         view_combo.pack(side="left", padx=(0, 8))
+
+        ttk.Label(toolbar, text=gui_text("glossary_use")).pack(side="left", padx=(0, 6))
+        use_combo = ttk.Combobox(
+            toolbar,
+            textvariable=glossary_mode,
+            values=[glossary_mode_label(mode) for mode in glossary_modes],
+            state="readonly",
+            width=16,
+        )
+        use_combo.pack(side="left", padx=(0, 8))
 
         ttk.Label(toolbar, text=gui_text("search_glossary")).pack(side="left", padx=(0, 6))
         search_entry = ttk.Entry(toolbar, textvariable=search_var, width=24)
@@ -3551,7 +4841,7 @@ class NibbleGUI:
                 if target is manual_entries:
                     self.active_manual_glossary_path = path
                 else:
-                    self.active_machine_glossary_path = self.machine_glossary_path_for(source_type.get(), output_path.get().strip())
+                    self.active_machine_glossary_path = path
                 refresh_terms()
                 self.refresh_active_glossary_tree()
                 print(f"Imported glossary: {path} ({len(target)} terms)\n")
@@ -3688,6 +4978,8 @@ class NibbleGUI:
             SETTINGS["last_translate_source_type"] = source_type.get()
             SETTINGS["last_translate_source_path"] = source_path.get().strip()
             SETTINGS["last_translate_output_path"] = output_path.get().strip()
+            selected_glossary_mode = glossary_mode_from_label(glossary_mode.get())
+            SETTINGS["last_translate_glossary_mode"] = selected_glossary_mode
             save_config()
             api_config = {
                 "api_base": SETTINGS["llm_api_base"],
@@ -3698,10 +4990,11 @@ class NibbleGUI:
             }
             src = source_path.get().strip()
             out = output_path.get().strip()
-            manual_snapshot = manual_entries
+            manual_snapshot = list(manual_entries) if selected_glossary_mode in {"both", "manual"} else []
             machine_snapshot = machine_entries
+            use_machine_glossary = selected_glossary_mode in {"both", "machine"}
             manual_path = self.active_manual_glossary_path or self.manual_glossary_path_for(source_type.get(), out)
-            machine_path = self.machine_glossary_path_for(source_type.get(), out)
+            machine_path = self.active_machine_glossary_path or self.machine_glossary_path_for(source_type.get(), out)
             self.active_manual_entries = manual_entries
             self.active_machine_entries = machine_entries
             self.active_manual_glossary_path = manual_path
@@ -3742,6 +5035,7 @@ class NibbleGUI:
                     auto_glossary=auto_glossary.get(),
                     machine_glossary_entries=machine_snapshot,
                     machine_glossary_path=machine_path,
+                    use_machine_glossary=use_machine_glossary,
                     glossary_callback=glossary_callback,
                 ))
             else:
@@ -3753,6 +5047,7 @@ class NibbleGUI:
                     auto_glossary=auto_glossary.get(),
                     machine_glossary_entries=machine_snapshot,
                     machine_glossary_path=machine_path,
+                    use_machine_glossary=use_machine_glossary,
                     glossary_callback=glossary_callback,
                 ))
             try:
@@ -3768,6 +5063,309 @@ class NibbleGUI:
 
         ttk.Button(bottom, text=gui_text("start_translate"), command=start_translation).pack(side="right")
         self.center_window(win, 1180, 700)
+
+    def open_polish_window(self):
+        from tkinter import ttk, filedialog, messagebox
+
+        win = self.tk.Toplevel(self.root)
+        win.title(gui_text("polish_tool"))
+        win.configure(bg="#fff3dc")
+        win.minsize(860, 420)
+        self.install_background(win)
+        win.transient(self.root)
+        win.grab_set()
+        win.columnconfigure(0, weight=1)
+        win.rowconfigure(2, weight=1)
+
+        api_base = self.tk.StringVar(value=SETTINGS.get("llm_api_base", "https://api.openai.com/v1/chat/completions"))
+        api_key = self.tk.StringVar(value=SETTINGS.get("llm_api_key", ""))
+        model = self.tk.StringVar(value=SETTINGS.get("llm_model", "gpt-4o-mini"))
+        saved_source_path = SETTINGS.get("last_polish_source_path", "")
+        saved_translation_path = SETTINGS.get("last_polish_translation_path", "")
+        saved_output_path = SETTINGS.get("last_polish_output_path", "")
+        source_path = self.tk.StringVar(value=saved_source_path if os.path.isdir(saved_source_path) else "")
+        translation_path = self.tk.StringVar(value=saved_translation_path if os.path.isdir(saved_translation_path) else "")
+        saved_output_is_folder = (
+            saved_output_path
+            and not str(saved_output_path).lower().endswith(".txt")
+            and os.path.normcase(os.path.abspath(saved_output_path))
+            != os.path.normcase(os.path.abspath(saved_translation_path or "."))
+        )
+        output_path = self.tk.StringVar(value=saved_output_path if saved_output_is_folder else "")
+        saved_extra_paths = SETTINGS.get("last_polish_extra_glossary_paths", [])
+        if not isinstance(saved_extra_paths, list):
+            saved_extra_paths = []
+        extra_glossary_paths = [str(path) for path in saved_extra_paths if str(path).strip()]
+        default_glossary_text = self.tk.StringVar()
+        extra_glossary_text = self.tk.StringVar()
+        glossary_split = self.tk.BooleanVar(value=bool(SETTINGS.get("polish_glossary_split", False)))
+        glossary_lines = self.tk.StringVar(value=str(SETTINGS.get("polish_glossary_lines", 80)))
+        symbol_split = self.tk.BooleanVar(value=bool(SETTINGS.get("polish_symbol_split", False)))
+        symbol_lines = self.tk.StringVar(value=str(SETTINGS.get("polish_symbol_lines", 80)))
+        text_split = self.tk.BooleanVar(value=bool(SETTINGS.get("polish_text_split", True)))
+        text_lines = self.tk.StringVar(value=str(SETTINGS.get("polish_text_lines", 80)))
+
+        form = ttk.Frame(win, padding=12)
+        form.grid(row=0, column=0, sticky="ew")
+        form.columnconfigure(1, weight=1)
+
+        ttk.Label(form, text=gui_text("api_base")).grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=api_base).grid(row=0, column=1, sticky="ew", pady=3)
+        ttk.Label(form, text=gui_text("api_key")).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=api_key, show="*").grid(row=1, column=1, sticky="ew", pady=3)
+        ttk.Label(form, text=gui_text("model")).grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
+        model_combo = ttk.Combobox(form, textvariable=model, values=[model.get()] if model.get() else [], width=32)
+        model_combo.grid(row=2, column=1, sticky="w", pady=3)
+
+        def test_api_models():
+            test_button.configure(state="disabled")
+            self.status_var.set(gui_text("running"))
+
+            def worker():
+                try:
+                    models = fetch_llm_models(api_base.get().strip(), api_key.get().strip())
+                    self.root.after(0, lambda: on_models_loaded(models, None))
+                except Exception as e:
+                    self.root.after(0, lambda: on_models_loaded([], e))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def on_models_loaded(models, error):
+            test_button.configure(state="normal")
+            if not (self.worker and self.worker.is_alive()):
+                self.status_var.set(gui_text("ready"))
+            if error:
+                messagebox.showerror(gui_text("error_title"), f"{gui_text('api_unavailable')}\n{error}", parent=win)
+                return
+            model_combo.configure(values=models, state="readonly")
+            if model.get() not in models:
+                model.set(models[0])
+            messagebox.showinfo(gui_text("done_title"), gui_text("models_loaded"), parent=win)
+
+        test_button = ttk.Button(form, text=gui_text("test_api"), command=test_api_models)
+        test_button.grid(row=2, column=2, padx=(8, 0), pady=3)
+
+        def default_output_for_translation(path):
+            return default_polish_output_folder(path)
+
+        def refresh_glossary_display(*_):
+            paths = default_polish_glossary_paths(translation_path.get().strip())
+            default_glossary_text.set(
+                " + ".join(os.path.basename(path) for path in paths) or gui_text("no_default_glossary")
+            )
+            extra_glossary_text.set(" + ".join(os.path.basename(path) for path in extra_glossary_paths))
+
+        def browse_dir(var, title_key, translation=False):
+            path = filedialog.askdirectory(parent=win, title=gui_text(title_key))
+            if path:
+                var.set(path)
+                if translation:
+                    output_path.set(default_output_for_translation(path))
+                refresh_glossary_display()
+                persist_polish_paths()
+
+        def browse_output():
+            path = filedialog.askdirectory(parent=win, title=gui_text("select_output"))
+            if path:
+                output_path.set(path)
+                persist_polish_paths()
+
+        def import_extra_glossaries():
+            paths = filedialog.askopenfilenames(
+                parent=win,
+                title=gui_text("add_glossary"),
+                filetypes=[("JSON", "*.json"), ("All files", "*.*")],
+            )
+            for path in paths:
+                if path not in extra_glossary_paths:
+                    extra_glossary_paths.append(path)
+            refresh_glossary_display()
+            persist_polish_paths()
+
+        def clear_extra_glossaries():
+            extra_glossary_paths.clear()
+            refresh_glossary_display()
+            persist_polish_paths()
+
+        ttk.Label(form, text=gui_text("source_folder")).grid(row=3, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=source_path).grid(row=3, column=1, sticky="ew", pady=3)
+        ttk.Button(form, text=gui_text("browse"), command=lambda: browse_dir(source_path, "select_source")).grid(row=3, column=2, padx=(8, 0), pady=3)
+
+        ttk.Label(form, text=gui_text("translation_path")).grid(row=4, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=translation_path).grid(row=4, column=1, sticky="ew", pady=3)
+        ttk.Button(form, text=gui_text("browse"), command=lambda: browse_dir(translation_path, "select_source", translation=True)).grid(row=4, column=2, padx=(8, 0), pady=3)
+
+        ttk.Label(form, text=gui_text("default_glossaries")).grid(row=5, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=default_glossary_text, state="readonly").grid(row=5, column=1, sticky="ew", pady=3)
+
+        ttk.Label(form, text=gui_text("extra_glossaries")).grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=extra_glossary_text, state="readonly").grid(row=6, column=1, sticky="ew", pady=3)
+        extra_buttons = ttk.Frame(form)
+        extra_buttons.grid(row=6, column=2, padx=(8, 0), pady=3)
+        ttk.Button(extra_buttons, text=gui_text("add_glossary"), command=import_extra_glossaries).pack(side="left")
+        ttk.Button(extra_buttons, text=gui_text("clear_glossaries"), command=clear_extra_glossaries).pack(side="left", padx=(6, 0))
+
+        ttk.Label(form, text=gui_text("output_folder")).grid(row=7, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Entry(form, textvariable=output_path).grid(row=7, column=1, sticky="ew", pady=3)
+        ttk.Button(form, text=gui_text("browse"), command=browse_output).grid(row=7, column=2, padx=(8, 0), pady=3)
+
+        chunk_frame = ttk.LabelFrame(win, text=gui_text("polish_chunk_settings"), padding=10)
+        chunk_frame.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
+        chunk_frame.columnconfigure(0, weight=1)
+        ttk.Label(chunk_frame, text=gui_text("polish_chunk_enabled")).grid(row=0, column=1, padx=8)
+        ttk.Label(chunk_frame, text=gui_text("polish_lines_per_chunk")).grid(row=0, column=2, padx=8)
+        chunk_rows = (
+            ("polish_stage_polish", text_split, text_lines),
+            ("polish_stage_glossary_check", glossary_split, glossary_lines),
+            ("polish_stage_symbol_check", symbol_split, symbol_lines),
+        )
+        for row_index, (label_key, enabled_var, lines_var) in enumerate(chunk_rows, 1):
+            ttk.Label(chunk_frame, text=gui_text(label_key)).grid(row=row_index, column=0, sticky="w", pady=2)
+            ttk.Checkbutton(chunk_frame, variable=enabled_var).grid(row=row_index, column=1, pady=2)
+            ttk.Entry(chunk_frame, textvariable=lines_var, width=10).grid(row=row_index, column=2, pady=2)
+
+        guide_frame = ttk.LabelFrame(win, text=gui_text("polish_guide"), padding=12)
+        guide_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        guide_frame.columnconfigure(0, weight=1)
+        guide_frame.rowconfigure(0, weight=1)
+        guide_box = self.tk.Text(guide_frame, wrap="word", width=80, height=8, bg="#fffaf2", fg="#4b2a24", insertbackground="#d9577a", padx=8, pady=8)
+        guide_box.grid(row=0, column=0, sticky="nsew")
+        guide_box.insert("1.0", SETTINGS.get("polish_style", "") or DEFAULT_POLISH_GUIDE)
+
+        def persist_polish_paths():
+            SETTINGS["last_polish_source_path"] = source_path.get().strip()
+            SETTINGS["last_polish_translation_path"] = translation_path.get().strip()
+            SETTINGS["last_polish_output_path"] = output_path.get().strip()
+            SETTINGS["last_polish_glossary_path"] = ""
+            SETTINGS["last_polish_extra_glossary_paths"] = list(extra_glossary_paths)
+            save_config()
+
+        def translation_path_changed(*_):
+            refresh_glossary_display()
+            if not output_path.get().strip() and translation_path.get().strip():
+                output_path.set(default_output_for_translation(translation_path.get().strip()))
+
+        translation_path.trace_add("write", translation_path_changed)
+        translation_path_changed()
+
+        bottom = ttk.Frame(win, padding=(12, 0, 12, 12))
+        bottom.grid(row=3, column=0, sticky="ew")
+
+        def start_polish():
+            if self.worker and self.worker.is_alive():
+                messagebox.showwarning(gui_text("error_title"), gui_text("task_running"), parent=win)
+                return
+            source_folder = source_path.get().strip()
+            translation_folder = translation_path.get().strip()
+            if not api_key.get().strip() or not model.get().strip() or not source_folder or not translation_folder:
+                messagebox.showwarning(gui_text("error_title"), gui_text("missing_polish_config"), parent=win)
+                return
+            if not os.path.isdir(source_folder) or not os.path.isdir(translation_folder):
+                messagebox.showwarning(gui_text("error_title"), gui_text("missing_polish_config"), parent=win)
+                return
+            translation_files = sorted(list_txt_files(translation_folder))
+            if not translation_files:
+                messagebox.showwarning(gui_text("error_title"), gui_text("log_no_txt_files"), parent=win)
+                return
+            missing_names = [
+                os.path.basename(path)
+                for path in translation_files
+                if not os.path.isfile(os.path.join(source_folder, os.path.basename(path)))
+            ]
+            if missing_names:
+                preview = ", ".join(missing_names[:10])
+                if len(missing_names) > 10:
+                    preview += f" ... (+{len(missing_names) - 10})"
+                messagebox.showwarning(
+                    gui_text("error_title"),
+                    gui_text("missing_source_pairs").format(names=preview),
+                    parent=win,
+                )
+                return
+            try:
+                stage_chunking = {
+                    "glossary_check": {
+                        "enabled": glossary_split.get(),
+                        "lines": int(glossary_lines.get().strip()),
+                    },
+                    "symbol_check": {
+                        "enabled": symbol_split.get(),
+                        "lines": int(symbol_lines.get().strip()),
+                    },
+                    "polish": {
+                        "enabled": text_split.get(),
+                        "lines": int(text_lines.get().strip()),
+                    },
+                }
+                if any(settings["lines"] <= 0 for settings in stage_chunking.values()):
+                    raise ValueError
+            except (TypeError, ValueError):
+                messagebox.showwarning(gui_text("error_title"), gui_text("invalid_polish_lines"), parent=win)
+                return
+            SETTINGS["llm_api_base"] = api_base.get().strip()
+            SETTINGS["llm_api_key"] = api_key.get().strip()
+            SETTINGS["llm_model"] = model.get().strip()
+            SETTINGS["polish_style"] = guide_box.get("1.0", "end").strip()
+            SETTINGS["polish_glossary_split"] = stage_chunking["glossary_check"]["enabled"]
+            SETTINGS["polish_glossary_lines"] = stage_chunking["glossary_check"]["lines"]
+            SETTINGS["polish_symbol_split"] = stage_chunking["symbol_check"]["enabled"]
+            SETTINGS["polish_symbol_lines"] = stage_chunking["symbol_check"]["lines"]
+            SETTINGS["polish_text_split"] = stage_chunking["polish"]["enabled"]
+            SETTINGS["polish_text_lines"] = stage_chunking["polish"]["lines"]
+            persist_polish_paths()
+            try:
+                glossary_entries, _ = load_polish_glossaries(translation_folder, extra_glossary_paths)
+            except Exception as e:
+                messagebox.showerror(gui_text("error_title"), str(e), parent=win)
+                return
+            api_config = {
+                "api_base": SETTINGS["llm_api_base"],
+                "api_key": SETTINGS["llm_api_key"],
+                "model": SETTINGS["llm_model"],
+                "polish_guide": SETTINGS.get("polish_style", ""),
+                "stage_chunking": stage_chunking,
+            }
+            out = output_path.get().strip() or default_output_for_translation(translation_folder)
+            if os.path.normcase(os.path.abspath(out)) == os.path.normcase(os.path.abspath(translation_folder)):
+                messagebox.showwarning(gui_text("error_title"), gui_text("invalid_polish_output"), parent=win)
+                return
+            output_path.set(out)
+            persist_polish_paths()
+            self.translation_running = True
+            self.pause_event.clear()
+            self.stop_event.clear()
+            self.progress_bar.configure(value=0, maximum=100)
+            self.progress_var.set(gui_text("progress_idle"))
+            self.pause_button.configure(state="normal", text=gui_text("pause"))
+            self.stop_button.configure(state="normal")
+
+            def progress_callback(current, total, name, start_time, completed):
+                self.log_queue.put(("progress", (current, total, name, start_time, completed)))
+
+            self.run_worker(lambda: polish_txt_folder_with_llm(
+                source_folder,
+                translation_folder,
+                out,
+                glossary_entries,
+                api_config,
+                progress_callback=progress_callback,
+                pause_event=self.pause_event,
+                stop_event=self.stop_event,
+            ))
+            try:
+                win.grab_release()
+            except Exception:
+                pass
+            try:
+                win.transient("")
+                win.iconify()
+            except Exception:
+                win.withdraw()
+            self.root.lift()
+
+        ttk.Button(bottom, text=gui_text("start_polish"), command=start_polish).pack(side="right")
+        ttk.Button(bottom, text=gui_text("cancel"), command=win.destroy).pack(side="right", padx=(0, 8))
+        self.center_window(win, 1120, 760)
 
     def reset_driver_path(self):
         global chrome_driver_path
@@ -3787,9 +5385,10 @@ class NibbleGUI:
 
 
 def is_supported_url(novel_url):
-    if "sbxh" in novel_url:
+    url_lower = novel_url.lower()
+    if "sbxh" in url_lower:
         return True
-    return any(site_key in novel_url for site_key in SITE_HANDLERS)
+    return any(site_key in url_lower for site_key in SITE_HANDLERS)
 
 
 def ensure_chromedriver_for_gui():
@@ -3804,6 +5403,44 @@ def ensure_chromedriver_for_gui():
     chrome_driver_path = new_driver_path
     save_config()
     return True
+
+
+def get_novelpia_profile_dir():
+    profile_dir = str(SETTINGS.get("novelpia_profile_dir", "") or "").strip()
+    if not profile_dir:
+        profile_dir = auto_novelpia_profile_dir()
+    profile_dir = os.path.abspath(os.path.expanduser(profile_dir))
+    os.makedirs(profile_dir, exist_ok=True)
+    return profile_dir
+
+
+def open_novelpia_regular_chrome_login():
+    chrome_path = find_chrome_executable()
+    profile_dir = get_novelpia_profile_dir()
+    args = [
+        chrome_path,
+        f"--user-data-dir={profile_dir}",
+        "--new-window",
+        "https://novelpia.com/",
+    ]
+    return subprocess.Popen(args)
+
+
+def create_novelpia_chrome_options():
+    profile_dir = get_novelpia_profile_dir()
+    options = Options()
+    options.page_load_strategy = "eager"
+    options.add_argument(f"--user-data-dir={profile_dir}")
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--lang=ko-KR")
+    options.add_experimental_option("excludeSwitches", ["enable-logging"])
+    print(_novelpia_text(
+        f"Novelpia 浏览器资料目录：{profile_dir}",
+        f"Novelpia browser profile: {profile_dir}",
+    ))
+    return options
 
 
 def create_plain_chrome_driver(chrome_options):
@@ -3855,7 +5492,9 @@ def gui_scrape_novel(novel_url):
         print(f"{r}[{w}X{r}]{w} Not a supported site. Please enter a valid URL.")
         return
 
-    is_sbxh = "sbxh" in novel_url
+    url_lower = novel_url.lower()
+    is_sbxh = "sbxh" in url_lower
+    is_novelpia = "novelpia.com" in url_lower
     driver = None
 
     if is_sbxh:
@@ -3880,6 +5519,8 @@ def gui_scrape_novel(novel_url):
             if explanation:
                 print(f"{r}[{w}X{r}]{w} {explanation}")
             raise
+    elif is_novelpia:
+        driver = create_plain_chrome_driver(create_novelpia_chrome_options())
     else:
         chrome_options = Options()
         chrome_options.add_argument("--disable-gpu")
